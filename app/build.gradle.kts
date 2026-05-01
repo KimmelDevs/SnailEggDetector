@@ -29,6 +29,7 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
+        isCoreLibraryDesugaringEnabled = true   // needed for java.time on minSdk 24
     }
 
     kotlinOptions {
@@ -38,66 +39,52 @@ android {
     buildFeatures {
         compose = true
     }
+
+    aaptOptions {
+        noCompress("tflite")
+    }
 }
 
 dependencies {
-    // Compose BOM — keeps all Compose library versions aligned
-    implementation(platform(libs.androidx.compose.bom))
+    // ── Desugaring (java.time on API 24+) ─────────────────────────────────────
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
 
-    // Core Compose
+    // ── Compose BOM ───────────────────────────────────────────────────────────
+    implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.ui)
     implementation(libs.androidx.ui.graphics)
     implementation(libs.androidx.ui.tooling.preview)
-
-    // Material 3
     implementation(libs.androidx.material3)
-
-    // Material Icons Extended (History, AccountCircle, etc.)
     implementation(libs.androidx.material.icons.extended)
-
-    // Navigation Compose
     implementation(libs.androidx.navigation.compose)
-
-    // Activity Compose (enableEdgeToEdge, setContent)
     implementation(libs.androidx.activity.compose)
-
-    // Lifecycle + ViewModel (for future use)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
-
-    // Debug tooling
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
-    // build.gradle.kts (app)
+
+    // ── Supabase BOM ──────────────────────────────────────────────────────────
     implementation(platform("io.github.jan-tennert.supabase:bom:2.6.1"))
     implementation("io.github.jan-tennert.supabase:gotrue-kt")
     implementation("io.github.jan-tennert.supabase:postgrest-kt")
+    implementation("io.github.jan-tennert.supabase:storage-kt")   // ← added
     implementation("io.ktor:ktor-client-android:2.3.12")
 
-    // CameraX — live preview + frame analysis
+    // ── Coil (photo thumbnails in HistoryScreen) ──────────────────────────────
+    implementation("io.coil-kt:coil-compose:2.7.0")               // ← added
+
+    // ── CameraX ───────────────────────────────────────────────────────────────
     val camerax_version = "1.3.4"
     implementation("androidx.camera:camera-core:$camerax_version")
     implementation("androidx.camera:camera-camera2:$camerax_version")
     implementation("androidx.camera:camera-lifecycle:$camerax_version")
     implementation("androidx.camera:camera-view:$camerax_version")
 
-    // TensorFlow Lite — runs the YOLOv8 .tflite model
+    // ── TensorFlow Lite ───────────────────────────────────────────────────────
     implementation("org.tensorflow:tensorflow-lite:2.14.0")
     implementation("org.tensorflow:tensorflow-lite-support:0.4.4")
-    implementation("org.tensorflow:tensorflow-lite-gpu:2.14.0")   // optional GPU delegate
+    implementation("org.tensorflow:tensorflow-lite-gpu:2.14.0")
 
-    // Lifecycle (for LocalLifecycleOwner in Compose)
+    // ── Lifecycle (LocalLifecycleOwner) ───────────────────────────────────────
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.0")
-
-    // ... your existing Supabase + Compose dependencies stay as-is
-}
-
-// ── Also add to android { } block ──────────────────────────────────────────
-android {
-    // ...existing config...
-
-    // Prevent TFLite model from being compressed — it must stay as-is in APK
-    aaptOptions {
-        noCompress("tflite")
-    }
 }
