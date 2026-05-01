@@ -14,12 +14,27 @@ import java.nio.ByteOrder
  *
  * Drop your exported model at:  app/src/main/assets/best.tflite
  *
- * Export from the Colab notebook with:
- *   model.export(format="tflite", imgsz=640)
+ * Export from the pipeline with:
+ *   model.export(format="tflite", imgsz=640, half=True)
  *
- * Input  : 1 × IMG_SIZE × IMG_SIZE × 3  (float32, 0..1 normalised)
- * Output : 1 × NUM_BOXES × 6  — each row is [x1, y1, x2, y2, label, conf]
- *          coordinates are in pixel space (0..IMG_SIZE)
+ * ── Tensor shapes ────────────────────────────────────────────────────────────
+ * Input  : [1, 640, 640, 3]   float32, values normalised to 0..1
+ *
+ * Output : [1, 5, 8400]       YOLOv8 TFLite native layout
+ *           │   │   └─ anchor boxes  (8400 = 3 scales × 80×80 + 40×40 + 20×20)
+ *           │   └───── channels      (4 bbox values + num_classes)
+ *           └───────── batch size    (always 1 at inference)
+ *
+ *   output[0][i] = cx   (normalised, 0..1)
+ *   output[1][i] = cy   (normalised, 0..1)
+ *   output[2][i] = w    (normalised, 0..1)
+ *   output[3][i] = h    (normalised, 0..1)
+ *   output[4][i] = class-0 confidence score   ← for single-class models
+ *   output[5][i] = class-1 confidence score   ← present only if nc > 1, etc.
+ *
+ * The original code assumed [1, numBoxes, 6] (transposed + wrong field count),
+ * which caused the fatal shape-mismatch crash.
+ * ─────────────────────────────────────────────────────────────────────────────
  */
 class SnailDetector(context: Context) {
 
@@ -76,42 +91,75 @@ class SnailDetector(context: Context) {
 
         val inputBuf = bitmapToInputBuffer(bitmap)
 
-        // Output layout: [1, numBoxes, 6]
-        // Each box = [x1, y1, x2, y2, label, conf]  (coords in 0..IMG_SIZE pixels)
-        val outputShape = interp.getOutputTensor(0).shape()  // e.g. [1, 8400, 6]
-        val numBoxes    = outputShape[1]
+        // Read the actual output tensor shape at runtime so this code remains
+        // correct even if the model is re-exported with a different image size
+        // or number of classes.
+        //
+        // YOLOv8 TFLite export always produces: [1, numChannels, numAnchors]
+        //   numChannels = 4  (bbox)  + num_classes
+        //   numAnchors  = 8400 for imgsz=640
+        val shape       = interp.getOutputTensor(0).shape()  // e.g. [1, 5, 8400]
+        val numChannels = shape[1]                            // 5
+        val numAnchors  = shape[2]                            // 8400
 
-        val rawOutput = Array(1) { Array(numBoxes) { FloatArray(6) } }
+        // Allocate output buffer to exactly match the model's output tensor.
+        val rawOutput = Array(1) { Array(numChannels) { FloatArray(numAnchors) } }
         interp.run(inputBuf, rawOutput)
 
-        return parseOutput(rawOutput[0])
+        return parseOutput(rawOutput[0], numAnchors, numChannels)
     }
 
     // ── Output parsing ────────────────────────────────────────────────────────
 
     /**
-     * Each row: [x1, y1, x2, y2, label, conf]
-     * x1/y1/x2/y2 are already in pixel coords (0..IMG_SIZE) — no conversion needed.
+     * Iterates over every anchor and converts the raw YOLOv8 output to a
+     * list of Detection objects in pixel space (0..IMG_SIZE).
+     *
+     * Layout of [output]:
+     *   output[0..3][anchorIdx]  = cx, cy, w, h  (normalised 0..1)
+     *   output[4+c][anchorIdx]   = confidence score for class c
      */
-    private fun parseOutput(output: Array<FloatArray>): List<Detection> {
+    private fun parseOutput(
+        output      : Array<FloatArray>,
+        numAnchors  : Int,
+        numChannels : Int
+    ): List<Detection> {
+
+        val numClasses = numChannels - 4          // e.g. 5 - 4 = 1
         val candidates = mutableListOf<Detection>()
 
-        for (row in output) {
-            val x1   = row[0]
-            val y1   = row[1]
-            val x2   = row[2]
-            val y2   = row[3]
-            val cls  = row[4].toInt()
-            val conf = row[5]
+        for (i in 0 until numAnchors) {
+            // Bounding box — normalised centre + size
+            val cx = output[0][i]
+            val cy = output[1][i]
+            val w  = output[2][i]
+            val h  = output[3][i]
 
-            if (conf < CONF_THRESH) continue
+            // Find the highest-scoring class
+            var bestClass = 0
+            var bestScore = output[4][i]
+            for (c in 1 until numClasses) {
+                val score = output[4 + c][i]
+                if (score > bestScore) {
+                    bestScore = score
+                    bestClass = c
+                }
+            }
+
+            if (bestScore < CONF_THRESH) continue
+
+            // Convert from normalised cx,cy,w,h → absolute pixel x1,y1,x2,y2
+            val x1 = (cx - w / 2f) * IMG_SIZE
+            val y1 = (cy - h / 2f) * IMG_SIZE
+            val x2 = (cx + w / 2f) * IMG_SIZE
+            val y2 = (cy + h / 2f) * IMG_SIZE
 
             candidates.add(
                 Detection(
                     bbox       = RectF(x1, y1, x2, y2),
-                    confidence = conf,
-                    classId    = cls,
-                    label      = CLASS_NAMES.getOrElse(cls) { "class_$cls" }
+                    confidence = bestScore,
+                    classId    = bestClass,
+                    label      = CLASS_NAMES.getOrElse(bestClass) { "class_$bestClass" }
                 )
             )
         }
@@ -140,7 +188,7 @@ class SnailDetector(context: Context) {
         val interBottom = minOf(a.bottom, b.bottom)
 
         val interArea = maxOf(0f, interRight - interLeft) *
-                        maxOf(0f, interBottom - interTop)
+                maxOf(0f, interBottom - interTop)
         if (interArea == 0f) return 0f
 
         val aArea = (a.right - a.left) * (a.bottom - a.top)
@@ -150,6 +198,11 @@ class SnailDetector(context: Context) {
 
     // ── Coordinate mapping ────────────────────────────────────────────────────
 
+    /**
+     * Scales a Detection from model pixel space (0..IMG_SIZE) to the
+     * on-screen overlay dimensions, optionally mirroring on X for the
+     * front camera.
+     */
     fun scaleToOverlay(
         det      : Detection,
         overlayW : Int,

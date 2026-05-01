@@ -11,11 +11,11 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
-import com.example.snaildetector.ui.screens.DetectScreen
-import com.example.snaildetector.ui.screens.HistoryScreen
-import com.example.snaildetector.ui.screens.HomeScreen
+import com.example.snaileggdetector.ui.screens.DetectScreen
+import com.example.snaileggdetector.ui.screens.HistoryScreen
+import com.example.snaileggdetector.ui.screens.HomeScreen
 import com.example.snaildetector.ui.screens.LoginScreen
-import com.example.snaildetector.ui.screens.ProfileScreen
+import com.example.snaileggdetector.ui.screens.ProfileScreen
 import com.example.snaildetector.ui.screens.SignUpScreen
 
 @Composable
@@ -24,7 +24,6 @@ fun AppNavGraph() {
     val navBackStack by navController.currentBackStackEntryAsState()
     val currentDestination = navBackStack?.destination
 
-    // Routes that show the bottom nav bar
     val mainRoutes = bottomNavItems.map { it.screen.route }
     val showBottomBar = currentDestination?.route in mainRoutes
 
@@ -59,7 +58,6 @@ fun AppNavGraph() {
             startDestination = Screen.Login.route,
             modifier         = Modifier.padding(innerPadding)
         ) {
-            // ── Auth ──────────────────────────────────────────────
             composable(Screen.Login.route) {
                 LoginScreen(
                     onNavigateToSignUp = { navController.navigate(Screen.SignUp.route) },
@@ -81,7 +79,6 @@ fun AppNavGraph() {
                 )
             }
 
-            // ── Main tabs ─────────────────────────────────────────
             composable(Screen.Home.route)    { HomeScreen() }
             composable(Screen.Detect.route)  { DetectScreen() }
             composable(Screen.History.route) { HistoryScreen() }
