@@ -25,6 +25,7 @@ import androidx.compose.ui.unit.dp
 import com.example.snaildetector.supabase
 import io.github.jan.supabase.gotrue.auth
 import io.github.jan.supabase.gotrue.providers.builtin.Email
+import io.github.jan.supabase.postgrest.postgrest
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -52,11 +53,20 @@ fun SignUpScreen(
             isLoading    = true
             errorMessage = null
             try {
+                // 1. Create auth user with full_name in metadata
                 supabase.auth.signUpWith(Email) {
                     this.email    = email
                     this.password = password
                     data = buildJsonObject { put("full_name", name) }
                 }
+
+                // 2. Insert into snailtrackers using the new user's id
+                val uid = supabase.auth.currentUserOrNull()?.id
+                if (uid != null) {
+                    supabase.postgrest["snailtrackers"]
+                        .upsert(mapOf("id" to uid, "name" to name.trim()))
+                }
+
                 onSignUpSuccess()
             } catch (e: Exception) {
                 errorMessage = e.message ?: "Sign up failed. Please try again."
@@ -137,14 +147,14 @@ fun SignUpScreen(
                 IconButton(onClick = { passwordVisible = !passwordVisible }) {
                     Icon(
                         imageVector = if (passwordVisible) Icons.Filled.Visibility
-                                      else Icons.Filled.VisibilityOff,
+                        else Icons.Filled.VisibilityOff,
                         contentDescription = null
                     )
                 }
             },
             singleLine           = true,
             visualTransformation = if (passwordVisible) VisualTransformation.None
-                                   else PasswordVisualTransformation(),
+            else PasswordVisualTransformation(),
             keyboardOptions = KeyboardOptions(
                 keyboardType = KeyboardType.Password,
                 imeAction    = ImeAction.Next
@@ -166,7 +176,7 @@ fun SignUpScreen(
                 IconButton(onClick = { confirmVisible = !confirmVisible }) {
                     Icon(
                         imageVector = if (confirmVisible) Icons.Filled.Visibility
-                                      else Icons.Filled.VisibilityOff,
+                        else Icons.Filled.VisibilityOff,
                         contentDescription = null
                     )
                 }
@@ -177,7 +187,7 @@ fun SignUpScreen(
                 if (!passwordsMatch) Text("Passwords do not match")
             },
             visualTransformation = if (confirmVisible) VisualTransformation.None
-                                   else PasswordVisualTransformation(),
+            else PasswordVisualTransformation(),
             keyboardOptions = KeyboardOptions(
                 keyboardType = KeyboardType.Password,
                 imeAction    = ImeAction.Done
@@ -202,7 +212,7 @@ fun SignUpScreen(
         Button(
             onClick  = { doSignUp() },
             enabled  = name.isNotBlank() && email.isNotBlank()
-                       && password.isNotBlank() && passwordsMatch && !isLoading,
+                    && password.isNotBlank() && passwordsMatch && !isLoading,
             modifier = Modifier.fillMaxWidth().height(52.dp)
         ) {
             if (isLoading) {
