@@ -58,6 +58,14 @@ class SnailDetectionOverlay(
     private var cameraFacing = CameraSelector.LENS_FACING_BACK
     private var isProcessing = false
 
+    // Temporal smoothing — stabilises the count across frames
+    private val tracker = DetectionTracker(
+        confirmFrames  = 2,    // must be seen 2 frames in a row before showing
+        maxMissFrames  = 5,    // keep showing for 5 frames after it disappears
+        smoothAlpha    = 0.4f, // EMA weight: higher = snappier but jitterier
+        iouMatchThresh = 0.3f  // IoU needed to link a new box to a tracked one
+    )
+
     // Matrix to rotate the raw camera frame to upright orientation
     private var imageRotationMatrix = Matrix()
     private var rotationInitialized = false
@@ -92,6 +100,7 @@ class SnailDetectionOverlay(
         if (facing == cameraFacing) return
         cameraFacing        = facing
         rotationInitialized = false
+        tracker.reset()
         removeView(previewView)
         removeView(boundingBoxView)
         attachViews()
@@ -159,9 +168,12 @@ class SnailDetectionOverlay(
                 detector.scaleToOverlay(it, overlayW, overlayH, mirrorX = isFront)
             }
 
+            // Stabilise across frames — prevents count flickering
+            val stable = tracker.update(scaled)
+
             withContext(Dispatchers.Main) {
-                currentDetections = scaled
-                onDetectionResult(scaled)
+                currentDetections = stable
+                onDetectionResult(stable)
                 boundingBoxView.invalidate()
                 isProcessing = false
             }

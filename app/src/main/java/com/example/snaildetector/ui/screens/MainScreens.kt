@@ -1,4 +1,4 @@
-package com.example.snaileggdetector.ui.screens
+package com.example.snaildetector.ui.screens
 
 import android.Manifest
 import android.content.pm.PackageManager
