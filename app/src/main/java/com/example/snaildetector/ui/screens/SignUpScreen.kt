@@ -1,4 +1,4 @@
-package com.example.snaildetector.ui.screens
+package com.example.snaileggdetector.ui.screens
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -22,6 +22,12 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import com.example.snaileggdetector.supabase
+import io.github.jan.supabase.gotrue.auth
+import io.github.jan.supabase.gotrue.providers.builtin.Email
+import kotlinx.coroutines.launch
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 
 @Composable
 fun SignUpScreen(
@@ -34,10 +40,31 @@ fun SignUpScreen(
     var confirmPassword by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
     var confirmVisible  by remember { mutableStateOf(false) }
+    var isLoading       by remember { mutableStateOf(false) }
+    var errorMessage    by remember { mutableStateOf<String?>(null) }
 
-    val focusManager = LocalFocusManager.current
-
+    val focusManager   = LocalFocusManager.current
+    val scope          = rememberCoroutineScope()
     val passwordsMatch = password == confirmPassword || confirmPassword.isEmpty()
+
+    fun doSignUp() {
+        scope.launch {
+            isLoading    = true
+            errorMessage = null
+            try {
+                supabase.auth.signUpWith(Email) {
+                    this.email    = email
+                    this.password = password
+                    data = buildJsonObject { put("full_name", name) }
+                }
+                onSignUpSuccess()
+            } catch (e: Exception) {
+                errorMessage = e.message ?: "Sign up failed. Please try again."
+            } finally {
+                isLoading = false
+            }
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -49,11 +76,7 @@ fun SignUpScreen(
     ) {
         Spacer(modifier = Modifier.height(48.dp))
 
-        // ── Header ────────────────────────────────────────────────
-        Text(
-            text  = "🐌",
-            style = MaterialTheme.typography.displayLarge
-        )
+        Text(text = "🐌", style = MaterialTheme.typography.displayLarge)
         Spacer(modifier = Modifier.height(12.dp))
         Text(
             text  = "Create Account",
@@ -69,7 +92,6 @@ fun SignUpScreen(
 
         Spacer(modifier = Modifier.height(40.dp))
 
-        // ── Name ──────────────────────────────────────────────────
         OutlinedTextField(
             value         = name,
             onValueChange = { name = it },
@@ -88,7 +110,6 @@ fun SignUpScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // ── Email ─────────────────────────────────────────────────
         OutlinedTextField(
             value         = email,
             onValueChange = { email = it },
@@ -107,7 +128,6 @@ fun SignUpScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // ── Password ──────────────────────────────────────────────
         OutlinedTextField(
             value         = password,
             onValueChange = { password = it },
@@ -137,7 +157,6 @@ fun SignUpScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // ── Confirm password ──────────────────────────────────────
         OutlinedTextField(
             value         = confirmPassword,
             onValueChange = { confirmPassword = it },
@@ -164,31 +183,41 @@ fun SignUpScreen(
                 imeAction    = ImeAction.Done
             ),
             keyboardActions = KeyboardActions(
-                onDone = { focusManager.clearFocus(); if (passwordsMatch) onSignUpSuccess() }
+                onDone = { focusManager.clearFocus(); if (passwordsMatch) doSignUp() }
             ),
             modifier = Modifier.fillMaxWidth()
         )
 
-        Spacer(modifier = Modifier.height(28.dp))
+        Spacer(modifier = Modifier.height(16.dp))
 
-        // ── Sign up button ────────────────────────────────────────
-        Button(
-            onClick  = onSignUpSuccess,
-            enabled  = name.isNotBlank() && email.isNotBlank()
-                       && password.isNotBlank() && passwordsMatch,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(52.dp)
-        ) {
+        errorMessage?.let {
             Text(
-                text  = "Create Account",
-                style = MaterialTheme.typography.labelLarge
+                text  = it,
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
             )
+        }
+
+        Button(
+            onClick  = { doSignUp() },
+            enabled  = name.isNotBlank() && email.isNotBlank()
+                       && password.isNotBlank() && passwordsMatch && !isLoading,
+            modifier = Modifier.fillMaxWidth().height(52.dp)
+        ) {
+            if (isLoading) {
+                CircularProgressIndicator(
+                    modifier    = Modifier.size(20.dp),
+                    color       = MaterialTheme.colorScheme.onPrimary,
+                    strokeWidth = 2.dp
+                )
+            } else {
+                Text(text = "Create Account", style = MaterialTheme.typography.labelLarge)
+            }
         }
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // ── Login redirect ────────────────────────────────────────
         Row(
             horizontalArrangement = Arrangement.Center,
             verticalAlignment     = Alignment.CenterVertically
@@ -198,9 +227,7 @@ fun SignUpScreen(
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
             )
-            TextButton(onClick = onNavigateToLogin) {
-                Text("Log In")
-            }
+            TextButton(onClick = onNavigateToLogin) { Text("Log In") }
         }
 
         Spacer(modifier = Modifier.height(48.dp))

@@ -1,4 +1,4 @@
-package com.example.snaildetector.ui.screens
+package com.example.snaileggdetector.ui.screens
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.MaterialTheme

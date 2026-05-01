@@ -11,7 +11,12 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
-import com.example.snaildetector.ui.screens.*
+import com.example.snaileggdetector.ui.screens.DetectScreen
+import com.example.snaileggdetector.ui.screens.HistoryScreen
+import com.example.snaileggdetector.ui.screens.HomeScreen
+import com.example.snaileggdetector.ui.screens.LoginScreen
+import com.example.snaileggdetector.ui.screens.ProfileScreen
+import com.example.snaileggdetector.ui.screens.SignUpScreen
 
 @Composable
 fun AppNavGraph() {

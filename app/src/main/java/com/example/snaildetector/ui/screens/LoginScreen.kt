@@ -1,4 +1,4 @@
-package com.example.snaildetector.ui.screens
+package com.example.snaileggdetector.ui.screens
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -20,19 +20,43 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.example.snaileggdetector.supabase
+import io.github.jan.supabase.gotrue.auth
+import io.github.jan.supabase.gotrue.providers.builtin.Email
+import kotlinx.coroutines.launch
 
 @Composable
 fun LoginScreen(
     onNavigateToSignUp: () -> Unit,
     onLoginSuccess: () -> Unit
 ) {
-    var email        by remember { mutableStateOf("") }
-    var password     by remember { mutableStateOf("") }
+    var email           by remember { mutableStateOf("") }
+    var password        by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
+    var isLoading       by remember { mutableStateOf(false) }
+    var errorMessage    by remember { mutableStateOf<String?>(null) }
 
     val focusManager = LocalFocusManager.current
+    val scope        = rememberCoroutineScope()
+
+    fun doLogin() {
+        scope.launch {
+            isLoading    = true
+            errorMessage = null
+            try {
+                supabase.auth.signInWith(Email) {
+                    this.email    = email
+                    this.password = password
+                }
+                onLoginSuccess()
+            } catch (e: Exception) {
+                errorMessage = e.message ?: "Login failed. Please try again."
+            } finally {
+                isLoading = false
+            }
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -44,11 +68,7 @@ fun LoginScreen(
     ) {
         Spacer(modifier = Modifier.height(48.dp))
 
-        // ── Logo / title area ─────────────────────────────────────
-        Text(
-            text  = "🐌",
-            style = MaterialTheme.typography.displayLarge
-        )
+        Text(text = "🐌", style = MaterialTheme.typography.displayLarge)
         Spacer(modifier = Modifier.height(12.dp))
         Text(
             text  = "Snail Detector",
@@ -64,7 +84,6 @@ fun LoginScreen(
 
         Spacer(modifier = Modifier.height(40.dp))
 
-        // ── Email ─────────────────────────────────────────────────
         OutlinedTextField(
             value         = email,
             onValueChange = { email = it },
@@ -83,7 +102,6 @@ fun LoginScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // ── Password ──────────────────────────────────────────────
         OutlinedTextField(
             value         = password,
             onValueChange = { password = it },
@@ -106,14 +124,13 @@ fun LoginScreen(
                 imeAction    = ImeAction.Done
             ),
             keyboardActions = KeyboardActions(
-                onDone = { focusManager.clearFocus(); onLoginSuccess() }
+                onDone = { focusManager.clearFocus(); doLogin() }
             ),
             modifier = Modifier.fillMaxWidth()
         )
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        // ── Forgot password ───────────────────────────────────────
         TextButton(
             onClick  = { /* TODO */ },
             modifier = Modifier.align(Alignment.End)
@@ -121,40 +138,50 @@ fun LoginScreen(
             Text("Forgot password?")
         }
 
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(16.dp))
 
-        // ── Login button ──────────────────────────────────────────
-        Button(
-            onClick  = onLoginSuccess,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(52.dp)
-        ) {
+        errorMessage?.let {
             Text(
-                text  = "Log In",
-                style = MaterialTheme.typography.labelLarge
+                text  = it,
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
             )
+        }
+
+        Button(
+            onClick  = { doLogin() },
+            enabled  = !isLoading && email.isNotBlank() && password.isNotBlank(),
+            modifier = Modifier.fillMaxWidth().height(52.dp)
+        ) {
+            if (isLoading) {
+                CircularProgressIndicator(
+                    modifier    = Modifier.size(20.dp),
+                    color       = MaterialTheme.colorScheme.onPrimary,
+                    strokeWidth = 2.dp
+                )
+            } else {
+                Text(text = "Log In", style = MaterialTheme.typography.labelLarge)
+            }
         }
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // ── Divider ───────────────────────────────────────────────
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier          = Modifier.fillMaxWidth()
         ) {
             HorizontalDivider(modifier = Modifier.weight(1f))
             Text(
-                text     = "  or  ",
-                style    = MaterialTheme.typography.bodySmall,
-                color    = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                text  = "  or  ",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
             )
             HorizontalDivider(modifier = Modifier.weight(1f))
         }
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // ── Sign up redirect ──────────────────────────────────────
         Row(
             horizontalArrangement = Arrangement.Center,
             verticalAlignment     = Alignment.CenterVertically
@@ -164,9 +191,7 @@ fun LoginScreen(
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
             )
-            TextButton(onClick = onNavigateToSignUp) {
-                Text("Sign Up")
-            }
+            TextButton(onClick = onNavigateToSignUp) { Text("Sign Up") }
         }
 
         Spacer(modifier = Modifier.height(48.dp))
