@@ -15,6 +15,7 @@ import android.view.SurfaceView
 import android.widget.FrameLayout
 import androidx.camera.core.AspectRatio
 import androidx.camera.core.CameraSelector
+import androidx.camera.core.ExperimentalGetImage
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
@@ -41,6 +42,7 @@ import java.util.concurrent.Executors
  *       update   = { it.switchCamera(facing) }
  *   )
  */
+@ExperimentalGetImage
 @SuppressLint("ViewConstructor")
 class SnailDetectionOverlay(
     private val lifecycleOwner : LifecycleOwner,
