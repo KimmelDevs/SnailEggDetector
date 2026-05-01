@@ -15,8 +15,8 @@ import com.example.snaildetector.ui.screens.DetectScreen
 import com.example.snaildetector.ui.screens.HistoryScreen
 import com.example.snaildetector.ui.screens.HomeScreen
 import com.example.snaildetector.ui.screens.LoginScreen
-import com.example.snaildetector.ui.screens.ProfileScreen
 import com.example.snaildetector.ui.screens.SignUpScreen
+import com.example.snaildetector.ui.screens.ProfileScreen
 
 @Composable
 fun AppNavGraph() {
@@ -82,7 +82,15 @@ fun AppNavGraph() {
             composable(Screen.Home.route)    { HomeScreen() }
             composable(Screen.Detect.route)  { DetectScreen() }
             composable(Screen.History.route) { HistoryScreen() }
-            composable(Screen.Profile.route) { ProfileScreen() }
+            composable(Screen.Profile.route) {
+                ProfileScreen(
+                    onLogout = {
+                        navController.navigate(Screen.Login.route) {
+                            popUpTo(0) { inclusive = true }
+                        }
+                    }
+                )
+            }
         }
     }
 }

@@ -4,7 +4,9 @@ import android.Manifest
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.OptIn
 import androidx.camera.core.CameraSelector
+import androidx.camera.core.ExperimentalGetImage
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -38,6 +40,7 @@ fun HomeScreen() {
 
 // ── Detect ────────────────────────────────────────────────────────────────────
 
+@OptIn(ExperimentalGetImage::class)
 @Composable
 fun DetectScreen() {
     val context        = LocalContext.current
@@ -207,13 +210,6 @@ fun DetectScreen() {
 @Composable
 fun HistoryScreen() {
     BlankPlaceholder(label = "History")
-}
-
-// ── Profile ───────────────────────────────────────────────────────────────────
-
-@Composable
-fun ProfileScreen() {
-    BlankPlaceholder(label = "Profile")
 }
 
 // ── Internal helper ───────────────────────────────────────────────────────────
