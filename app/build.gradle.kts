@@ -73,4 +73,31 @@ dependencies {
     implementation("io.github.jan-tennert.supabase:gotrue-kt")
     implementation("io.github.jan-tennert.supabase:postgrest-kt")
     implementation("io.ktor:ktor-client-android:2.3.12")
+
+    // CameraX — live preview + frame analysis
+    val camerax_version = "1.3.4"
+    implementation("androidx.camera:camera-core:$camerax_version")
+    implementation("androidx.camera:camera-camera2:$camerax_version")
+    implementation("androidx.camera:camera-lifecycle:$camerax_version")
+    implementation("androidx.camera:camera-view:$camerax_version")
+
+    // TensorFlow Lite — runs the YOLOv8 .tflite model
+    implementation("org.tensorflow:tensorflow-lite:2.14.0")
+    implementation("org.tensorflow:tensorflow-lite-support:0.4.4")
+    implementation("org.tensorflow:tensorflow-lite-gpu:2.14.0")   // optional GPU delegate
+
+    // Lifecycle (for LocalLifecycleOwner in Compose)
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.0")
+
+    // ... your existing Supabase + Compose dependencies stay as-is
+}
+
+// ── Also add to android { } block ──────────────────────────────────────────
+android {
+    // ...existing config...
+
+    // Prevent TFLite model from being compressed — it must stay as-is in APK
+    aaptOptions {
+        noCompress("tflite")
+    }
 }

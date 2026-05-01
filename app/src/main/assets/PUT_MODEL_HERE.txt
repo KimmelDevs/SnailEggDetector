@@ -1,0 +1,9 @@
+Place your YOLOv8 TFLite model here as:
+
+  best.tflite
+
+Export from the Colab notebook with:
+  model.export(format="tflite", imgsz=640)
+
+The file will be at: runs/detect/train/weights/best.tflite
+Copy it into this assets/ folder and rename it best.tflite
