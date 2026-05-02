@@ -19,7 +19,6 @@ class DetectionRepository {
     companion object {
         private const val TAG          = "DetectionRepo"
         private const val BUCKET       = "snail-detected"
-        private val SIGNED_URL_TTL     = 365.days
         private const val JPEG_QUALITY = 80
     }
 
@@ -72,14 +71,11 @@ class DetectionRepository {
             }
 
             // ── 3. Get a signed URL ───────────────────────────────────────────
-            Log.d(TAG, "STEP 3 — creating signed URL (ttl=$SIGNED_URL_TTL)")
-            val signedUrl = try {
-                supabase.storage[BUCKET].createSignedUrl(filePath, SIGNED_URL_TTL)
-                    .also { Log.i(TAG, "STEP 3 OK — signedUrl=$it") }
-            } catch (e: Exception) {
-                Log.w(TAG, "STEP 3 FAIL — createSignedUrl exception (non-fatal, continuing): ${e.message}")
-                null
-            }
+            val photoUrl = createPhotoUrl(
+                bucket = BUCKET,
+                path = filePath,
+                context = "STEP 3"
+            )
 
             // ── 4. Insert DB row ──────────────────────────────────────────────
             val detection = SnailDetection(
@@ -94,10 +90,10 @@ class DetectionRepository {
                 photoOriginalName = fileName,
                 photoMimeType     = "image/jpeg",
                 photoSize         = jpegBytes.size.toLong(),
-                photoUrl          = signedUrl,
+                photoUrl          = photoUrl,
             )
             Log.d(TAG, "STEP 4 — inserting row: userId=$uid eventId=$eventId " +
-                    "eggCount=$eggCount photoSize=${jpegBytes.size} photoUrl=${signedUrl?.take(60)}")
+                    "eggCount=$eggCount photoSize=${jpegBytes.size} photoUrl=${photoUrl.take(60)}")
             try {
                 supabase.from("snaildetections").insert(detection)
                 Log.i(TAG, "STEP 4 OK — row inserted for eventId=$eventId")
@@ -120,8 +116,10 @@ class DetectionRepository {
                 detection
             }
 
-            Log.i(TAG, "save() complete — returning id=${saved.id}")
-            saved
+            val hydrated = hydratePhotoUrl(saved, "STEP 5")
+
+            Log.i(TAG, "save() complete — returning id=${hydrated.id}")
+            hydrated
 
         } catch (e: Exception) {
             Log.e(TAG, "save() UNEXPECTED exception: ${e::class.qualifiedName}: ${e.message}", e)
@@ -135,13 +133,19 @@ class DetectionRepository {
         val uid = supabase.auth.currentUserOrNull()?.id
             ?: throw IllegalStateException("User not logged in")
         Log.d(TAG, "getAll() for uid=$uid")
-        return supabase.from("snaildetections")
+        val rows = supabase.from("snaildetections")
             .select {
                 filter { eq("user_id", uid) }
                 order("captured_at", Order.DESCENDING)
             }
             .decodeList<SnailDetection>()
             .also { Log.d(TAG, "getAll() returned ${it.size} rows") }
+
+        val hydrated = ArrayList<SnailDetection>(rows.size)
+        for (row in rows) {
+            hydrated += hydratePhotoUrl(row, "getAll()")
+        }
+        return hydrated
     }
 
     // ── Delete a row ──────────────────────────────────────────────────────────
@@ -165,6 +169,60 @@ class DetectionRepository {
         val out = ByteArrayOutputStream()
         bitmap.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, out)
         return out.toByteArray()
+    }
+
+    private suspend fun hydratePhotoUrl(
+        detection: SnailDetection,
+        context: String
+    ): SnailDetection {
+        if (!detection.photoUrl.isNullOrBlank()) {
+            return detection
+        }
+
+        val photoPath = detection.photoPath ?: return detection
+        val bucket = detection.bucket.ifBlank { BUCKET }
+        val photoUrl = createPhotoUrl(
+            bucket = bucket,
+            path = photoPath,
+            context = "$context hydratePhotoUrl"
+        )
+
+        backfillPhotoUrl(detection, photoUrl, context)
+        return detection.copy(photoUrl = photoUrl)
+    }
+
+    private suspend fun backfillPhotoUrl(
+        detection: SnailDetection,
+        photoUrl: String,
+        context: String
+    ) {
+        if (!detection.photoUrl.isNullOrBlank()) {
+            return
+        }
+
+        val recordId = detection.id ?: return
+        try {
+            supabase.from("snaildetections").update(
+                {
+                    set("photo_url", photoUrl)
+                }
+            ) {
+                filter { eq("id", recordId) }
+            }
+            Log.d(TAG, "$context backfillPhotoUrl OK — id=$recordId")
+        } catch (e: Exception) {
+            Log.w(TAG, "$context backfillPhotoUrl FAIL — id=$recordId message=${e.message}")
+        }
+    }
+
+    private fun createPhotoUrl(
+        bucket: String,
+        path: String,
+        context: String
+    ): String {
+        val url = supabase.storage[bucket].publicUrl(path)
+        Log.i(TAG, "$context OK — publicUrl=${url.take(80)}")
+        return url
     }
 
     // Proper ISO 8601 with colons + UTC suffix — accepted by Postgres timestamptz

@@ -1,5 +1,6 @@
 package com.example.snaildetector.ui.screens
 
+import android.util.Log
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -43,9 +44,18 @@ fun HistoryScreen(
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) {
+        println("DEBUG: Fetching started")
         isLoading = true
+
+        Log.d("HistoryScreen", "Loading detections")
         try {
             detections = repo.getAll()
+
+            if (detections.isNotEmpty()) {
+                Log.d("HistoryScreen", "Loaded ${detections} detections")
+            } else {
+                Log.d("HistoryScreen", "No detections found")
+            }
         } catch (e: Exception) {
             errorMessage = e.message ?: "Unknown error"
             android.util.Log.e("HistoryScreen", "Failed to load detections", e)
@@ -54,8 +64,9 @@ fun HistoryScreen(
         }
     }
 
-    Column(modifier = Modifier.fillMaxSize()) {
 
+
+    Column(modifier = Modifier.fillMaxSize()) {
         // ── Header ────────────────────────────────────────────────────────────
         Surface(shadowElevation = 2.dp) {
             Row(
