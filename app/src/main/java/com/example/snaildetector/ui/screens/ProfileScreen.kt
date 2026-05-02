@@ -17,16 +17,17 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.snaildetector.supabase
 import io.github.jan.supabase.gotrue.auth
-import io.github.jan.supabase.postgrest.postgrest
+import io.github.jan.supabase.postgrest.from
 import kotlinx.coroutines.launch
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 // ── Data model matching the snailtrackers table ───────────────────────────────
 
 @Serializable
 data class SnailTracker(
-    val id   : String,
-    val name : String
+    @SerialName("id")   val id   : String,
+    @SerialName("name") val name : String
 )
 
 // ── Screen ────────────────────────────────────────────────────────────────────
@@ -47,23 +48,23 @@ fun ProfileScreen(onLogout: () -> Unit) {
             val uid = supabase.auth.currentUserOrNull()?.id ?: return@LaunchedEffect
 
             // Try to fetch existing row
-            val rows = supabase.postgrest["snailtrackers"]
+            val rows = supabase.from("snailtrackers")
                 .select { filter { eq("id", uid) } }
                 .decodeList<SnailTracker>()
 
             if (rows.isNotEmpty()) {
                 trackerName = rows.first().name
             } else {
-                // First login — upsert a row using the name from auth metadata
+                // First login — upsert using name from auth metadata
                 val authName = supabase.auth.currentUserOrNull()
                     ?.userMetadata
                     ?.get("full_name")
                     ?.toString()
-                    ?.trim('"')    // Supabase wraps string values in quotes
+                    ?.trim('"')
                     ?: "Snail Tracker"
 
-                supabase.postgrest["snailtrackers"]
-                    .upsert(mapOf("id" to uid, "name" to authName))
+                supabase.from("snailtrackers")
+                    .upsert(SnailTracker(id = uid, name = authName))
 
                 trackerName = authName
             }
