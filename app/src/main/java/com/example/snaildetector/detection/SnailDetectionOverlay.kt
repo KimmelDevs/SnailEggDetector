@@ -148,20 +148,31 @@ class SnailDetectionOverlay(
 
         val isFront = (cameraFacing == CameraSelector.LENS_FACING_FRONT)
 
+        // Capture an immutable snapshot before handing off to the coroutine.
+        // Without this copy, the analyzer thread can advance to the next frame
+        // and overwrite / recycle `frame` while TFLite is still reading its
+        // pixel buffer — causing the SIGSEGV in libtensorflowlite_jni.so.
+        val frameCopy = frame.copy(frame.config ?: Bitmap.Config.ARGB_8888, false)
+
         CoroutineScope(Dispatchers.Default).launch {
-            val rawDetections = detector.detect(frame)
+            try {
+                val rawDetections = detector.detect(frameCopy)
 
-            val scaled = rawDetections.map {
-                detector.scaleToOverlay(it, w, h, mirrorX = isFront)
-            }
+                val scaled = rawDetections.map {
+                    detector.scaleToOverlay(it, w, h, mirrorX = isFront)
+                }
 
-            val stable = tracker.update(scaled)
+                val stable = tracker.update(scaled)
 
-            withContext(Dispatchers.Main) {
-                currentDetections = stable
-                onDetectionResult(stable)
-                boundingBoxView.invalidate()
-                isProcessing = false
+                withContext(Dispatchers.Main) {
+                    currentDetections = stable
+                    onDetectionResult(stable)
+                    boundingBoxView.invalidate()
+                    isProcessing = false
+                }
+            } finally {
+                // Release the per-inference copy now that TFLite is done with it.
+                frameCopy.recycle()
             }
         }
 

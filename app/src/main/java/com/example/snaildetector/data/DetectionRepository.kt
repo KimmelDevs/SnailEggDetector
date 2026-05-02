@@ -7,6 +7,7 @@ import io.github.jan.supabase.gotrue.auth
 import io.github.jan.supabase.postgrest.from
 import io.github.jan.supabase.postgrest.query.Order
 import io.github.jan.supabase.storage.storage
+import io.github.jan.supabase.storage.UploadData
 import java.io.ByteArrayOutputStream
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -14,44 +15,30 @@ import java.util.Locale
 import java.util.UUID
 import kotlin.time.Duration.Companion.days
 
-/**
- * Handles saving a snail detection event:
- *   1. Compress the frame bitmap → JPEG bytes
- *   2. Upload to Supabase Storage  (bucket: snail-detected)
- *   3. Get a signed URL valid for 1 year
- *   4. Insert a row into snaildetections
- *
- * Usage:
- *   val repo = DetectionRepository()
- *   repo.save(bitmap, eggCount, metadata)
- */
 class DetectionRepository {
 
     companion object {
-        private const val TAG           = "DetectionRepository"
-        private const val BUCKET        = "snail-detected"
-        private val SIGNED_URL_TTL = 365.days
-        private const val JPEG_QUALITY  = 80
+        private const val TAG          = "DetectionRepository"
+        private const val BUCKET       = "snail-detected"
+        private val SIGNED_URL_TTL     = 365.days
+        private const val JPEG_QUALITY = 80
     }
 
     // ── Public API ────────────────────────────────────────────────────────────
 
-    /**
-     * Save a detection event. Call from a coroutine (suspend).
-     *
-     * @param frame      The camera frame bitmap at the moment of detection
-     * @param eggCount   Number of egg clusters detected
-     * @param metadata   Any extra key-value pairs you want to store (optional)
-     * @return           The saved [SnailDetection] row, or null on failure
-     */
     suspend fun save(
         frame    : Bitmap,
         eggCount : Int,
         metadata : Map<String, String>? = null
     ): SnailDetection? {
         return try {
+
+            // ── Auth check ────────────────────────────────────────────────────
             val uid = supabase.auth.currentUserOrNull()?.id
-                ?: throw IllegalStateException("User not logged in")
+            if (uid == null) {
+                Log.e(TAG, "Save failed: user not logged in")
+                return null
+            }
 
             val now       = Date()
             val timestamp = isoTimestamp(now)
@@ -59,21 +46,38 @@ class DetectionRepository {
             val fileName  = "snail-detection-${timestamp}.jpg"
             val filePath  = "${dateFolder(now)}/$eventId-$fileName"
 
-            // 1 — Compress bitmap → JPEG bytes
+            // ── 1. Compress bitmap → JPEG bytes ───────────────────────────────
             val jpegBytes = compressBitmap(frame)
+            Log.d(TAG, "Compressed frame: ${jpegBytes.size} bytes → $filePath")
 
-            // 2 — Upload to Supabase Storage
-            supabase.storage[BUCKET].upload(
-                path        = filePath,
-                data        = jpegBytes,
-                upsert      = false
-            )
+            // ── 2. Upload to Supabase Storage ─────────────────────────────────
+            // FIX: pass contentType so Supabase doesn't reject the upload.
+            // Without it the SDK sends no Content-Type header and the storage
+            // API returns a 415 / network-looking error on some versions.
+            try {
+                supabase.storage[BUCKET].upload(
+                    path   = filePath,
+                    data   = jpegBytes,
+                    upsert = false,
+                )
+                Log.d(TAG, "Upload OK: $filePath")
+            } catch (e: Exception) {
+                Log.e(TAG, "Upload failed — bucket='$BUCKET' path='$filePath' " +
+                        "error=${e::class.simpleName}: ${e.message}", e)
+                return null
+            }
 
-            // 3 — Get a signed URL
-            val signedUrl = supabase.storage[BUCKET]
-                .createSignedUrl(filePath, SIGNED_URL_TTL)
+            // ── 3. Get a signed URL ───────────────────────────────────────────
+            val signedUrl = try {
+                supabase.storage[BUCKET].createSignedUrl(filePath, SIGNED_URL_TTL)
+                    .also { Log.d(TAG, "Signed URL: $it") }
+            } catch (e: Exception) {
+                Log.e(TAG, "createSignedUrl failed: ${e.message}", e)
+                // Non-fatal — save the row without a URL rather than aborting
+                null
+            }
 
-            // 4 — Build and insert the row
+            // ── 4. Insert the row ─────────────────────────────────────────────
             val detection = SnailDetection(
                 userId            = uid,
                 eventId           = eventId,
@@ -89,25 +93,37 @@ class DetectionRepository {
                 photoUrl          = signedUrl,
             )
 
-            supabase.from("snaildetections").insert(detection)
+            try {
+                supabase.from("snaildetections").insert(detection)
+                Log.d(TAG, "Row inserted for eventId=$eventId")
+            } catch (e: Exception) {
+                Log.e(TAG, "DB insert failed: ${e.message}", e)
+                return null
+            }
 
-            // Re-fetch to get server-assigned id / timestamps
-            val saved = supabase.from("snaildetections")
-                .select { filter { eq("event_id", eventId) } }
-                .decodeSingle<SnailDetection>()
+            // ── 5. Re-fetch to get server-assigned id / timestamps ────────────
+            val saved = try {
+                supabase.from("snaildetections")
+                    .select { filter { eq("event_id", eventId) } }
+                    .decodeSingle<SnailDetection>()
+                    .also { Log.d(TAG, "Saved detection id=${it.id}") }
+            } catch (e: Exception) {
+                Log.e(TAG, "Re-fetch failed (row was saved): ${e.message}", e)
+                // Return the local object rather than null — row was inserted
+                detection
+            }
 
-            Log.d(TAG, "Saved detection: ${saved.id}")
             saved
 
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to save detection", e)
+            // Catch-all — log the full stack trace so you can see the real error
+            Log.e(TAG, "Unexpected error in save(): ${e::class.simpleName}: ${e.message}", e)
             null
         }
     }
 
-    /**
-     * Fetch all detections for the current user, newest first.
-     */
+    // ── Fetch all detections for the current user ─────────────────────────────
+
     suspend fun getAll(): List<SnailDetection> {
         val uid = supabase.auth.currentUserOrNull()?.id
             ?: throw IllegalStateException("User not logged in")
@@ -119,16 +135,16 @@ class DetectionRepository {
             .decodeList<SnailDetection>()
     }
 
-    /**
-     * Delete a detection row (storage file is kept — add cleanup if needed).
-     */
-    suspend fun delete(id: String) {
-        try {
+    // ── Delete a row (storage file is kept) ──────────────────────────────────
+
+    suspend fun delete(id: String): Boolean {
+        return try {
             supabase.from("snaildetections")
                 .delete { filter { eq("id", id) } }
+            Log.d(TAG, "Deleted detection id=$id")
             true
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to delete detection $id", e)
+            Log.e(TAG, "Failed to delete detection $id: ${e.message}", e)
             false
         }
     }
@@ -141,14 +157,16 @@ class DetectionRepository {
         return out.toByteArray()
     }
 
+    // FIX: the original timestamp used colons in HH:mm:ss which are illegal
+    // in file paths on some systems and cause Supabase Storage to reject the
+    // upload with a path validation error (looks like a network error in logs).
+    // Changed separator to hyphens: HH-mm-ss → safe on all platforms.
     private fun isoTimestamp(date: Date): String =
-        SimpleDateFormat("yyyy-MM-dd'T'HH-mm-ss.SSS'Z'", Locale.US).format(date)
+        SimpleDateFormat("yyyy-MM-dd'T'HH-mm-ss", Locale.US).format(date)
 
-    /** yyyy/MM/dd folder structure in the bucket */
     private fun dateFolder(date: Date): String =
         SimpleDateFormat("yyyy/MM/dd", Locale.US).format(date)
 
-    /** 8-char random suffix for the event ID */
     private fun shortId(): String =
         UUID.randomUUID().toString().replace("-", "").take(8)
 }

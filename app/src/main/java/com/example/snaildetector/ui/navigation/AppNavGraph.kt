@@ -3,6 +3,7 @@ package com.example.snaildetector.ui.navigation
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.navigation.NavDestination.Companion.hierarchy
@@ -11,18 +12,43 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.example.snaildetector.supabase
 import com.example.snaildetector.ui.screens.DetectScreen
 import com.example.snaildetector.ui.screens.HistoryScreen
 import com.example.snaildetector.ui.screens.HomeScreen
 import com.example.snaildetector.ui.screens.LoginScreen
 import com.example.snaildetector.ui.screens.SignUpScreen
 import com.example.snaildetector.ui.screens.ProfileScreen
+import io.github.jan.supabase.gotrue.auth
+import io.github.jan.supabase.gotrue.SessionStatus
 
 @Composable
 fun AppNavGraph() {
     val navController = rememberNavController()
     val navBackStack by navController.currentBackStackEntryAsState()
     val currentDestination = navBackStack?.destination
+
+    // Collect the SDK's session status flow. On cold start the SDK emits
+    // LoadingFromStorage first, then either Authenticated or NotAuthenticated
+    // once it finishes reading the persisted token — which is why a plain
+    // currentSessionOrNull() check always returns null at composition time.
+    LaunchedEffect(Unit) {
+        supabase.auth.sessionStatus.collect { status ->
+            when (status) {
+                is SessionStatus.Authenticated -> {
+                    navController.navigate(Screen.Home.route) {
+                        popUpTo(Screen.Login.route) { inclusive = true }
+                    }
+                }
+                is SessionStatus.NotAuthenticated -> {
+                    navController.navigate(Screen.Login.route) {
+                        popUpTo(Screen.Home.route) { inclusive = true }
+                    }
+                }
+                else -> Unit // LoadingFromStorage — wait for next emission
+            }
+        }
+    }
 
     val mainRoutes = bottomNavItems.map { it.screen.route }
     val showBottomBar = currentDestination?.route in mainRoutes
