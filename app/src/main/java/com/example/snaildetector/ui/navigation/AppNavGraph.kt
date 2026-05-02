@@ -14,6 +14,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.example.snaildetector.supabase
 import com.example.snaildetector.ui.screens.DetectScreen
+import com.example.snaildetector.ui.screens.DetectionDetailScreen
 import com.example.snaildetector.ui.screens.HistoryScreen
 import com.example.snaildetector.ui.screens.HomeScreen
 import com.example.snaildetector.ui.screens.LoginScreen
@@ -28,10 +29,6 @@ fun AppNavGraph() {
     val navBackStack by navController.currentBackStackEntryAsState()
     val currentDestination = navBackStack?.destination
 
-    // Collect the SDK's session status flow. On cold start the SDK emits
-    // LoadingFromStorage first, then either Authenticated or NotAuthenticated
-    // once it finishes reading the persisted token — which is why a plain
-    // currentSessionOrNull() check always returns null at composition time.
     LaunchedEffect(Unit) {
         supabase.auth.sessionStatus.collect { status ->
             when (status) {
@@ -45,7 +42,7 @@ fun AppNavGraph() {
                         popUpTo(Screen.Home.route) { inclusive = true }
                     }
                 }
-                else -> Unit // LoadingFromStorage — wait for next emission
+                else -> Unit
             }
         }
     }
@@ -59,12 +56,12 @@ fun AppNavGraph() {
                 NavigationBar {
                     bottomNavItems.forEach { item ->
                         NavigationBarItem(
-                            icon  = { Icon(item.icon, contentDescription = item.label) },
-                            label = { Text(item.label) },
+                            icon     = { Icon(item.icon, contentDescription = item.label) },
+                            label    = { Text(item.label) },
                             selected = currentDestination?.hierarchy?.any {
                                 it.route == item.screen.route
                             } == true,
-                            onClick = {
+                            onClick  = {
                                 navController.navigate(item.screen.route) {
                                     popUpTo(navController.graph.findStartDestination().id) {
                                         saveState = true
@@ -107,7 +104,13 @@ fun AppNavGraph() {
 
             composable(Screen.Home.route)    { HomeScreen() }
             composable(Screen.Detect.route)  { DetectScreen() }
-            composable(Screen.History.route) { HistoryScreen() }
+            composable(Screen.History.route) {
+                HistoryScreen(
+                    onDetectionClick = { eventId ->
+                        navController.navigate(Screen.DetectionDetail.createRoute(eventId))
+                    }
+                )
+            }
             composable(Screen.Profile.route) {
                 ProfileScreen(
                     onLogout = {
@@ -115,6 +118,13 @@ fun AppNavGraph() {
                             popUpTo(0) { inclusive = true }
                         }
                     }
+                )
+            }
+            composable(Screen.DetectionDetail.route) { backStackEntry ->
+                val eventId = backStackEntry.arguments?.getString("eventId") ?: ""
+                DetectionDetailScreen(
+                    eventId = eventId,
+                    onBack  = { navController.popBackStack() }
                 )
             }
         }

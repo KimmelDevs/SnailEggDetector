@@ -1,12 +1,14 @@
 package com.example.snaildetector.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BrokenImage
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ImageSearch
 import androidx.compose.material3.*
@@ -30,7 +32,9 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 @Composable
-fun HistoryScreen() {
+fun HistoryScreen(
+    onDetectionClick: (eventId: String) -> Unit = {}
+) {
     val repo  = remember { DetectionRepository() }
     val scope = rememberCoroutineScope()
 
@@ -38,7 +42,6 @@ fun HistoryScreen() {
     var isLoading    by remember { mutableStateOf(true) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
-    // Load on first composition
     LaunchedEffect(Unit) {
         isLoading = true
         try {
@@ -99,6 +102,7 @@ fun HistoryScreen() {
                     items(detections, key = { it.id ?: it.eventId }) { det ->
                         DetectionCard(
                             detection = det,
+                            onClick   = { onDetectionClick(det.eventId) },
                             onDelete  = {
                                 scope.launch {
                                     det.id?.let { repo.delete(it) }
@@ -118,6 +122,7 @@ fun HistoryScreen() {
 @Composable
 private fun DetectionCard(
     detection : SnailDetection,
+    onClick   : () -> Unit,
     onDelete  : () -> Unit
 ) {
     var showConfirm by remember { mutableStateOf(false) }
@@ -141,9 +146,14 @@ private fun DetectionCard(
     Card(
         shape     = RoundedCornerShape(16.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-        modifier  = Modifier.fillMaxWidth()
+        modifier  = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() }
     ) {
-        Row(modifier = Modifier.padding(12.dp)) {
+        Row(
+            modifier          = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
 
             // Thumbnail
             DetectionThumbnail(photoUrl = detection.photoUrl)
@@ -153,8 +163,6 @@ private fun DetectionCard(
             // Info
             Column(modifier = Modifier.weight(1f)) {
 
-                // Egg count badge — FIX: added explicit modifier to Row so Kotlin
-                // does not misparse the single named arg as a condition expression
                 Row(
                     modifier          = Modifier,
                     verticalAlignment = Alignment.CenterVertically
@@ -177,7 +185,6 @@ private fun DetectionCard(
 
                 Spacer(modifier = Modifier.height(6.dp))
 
-                // Date
                 Text(
                     text       = formatTimestamp(detection.capturedAt),
                     fontSize   = 13.sp,
@@ -187,14 +194,12 @@ private fun DetectionCard(
 
                 Spacer(modifier = Modifier.height(2.dp))
 
-                // Event ID (truncated)
                 Text(
                     text     = detection.eventId.take(32) + "…",
                     fontSize = 11.sp,
                     color    = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
                 )
 
-                // Photo size
                 detection.photoSize?.let {
                     Text(
                         text     = formatSize(it),
@@ -203,6 +208,13 @@ private fun DetectionCard(
                     )
                 }
             }
+
+            // Chevron hint
+            Icon(
+                Icons.Default.ChevronRight,
+                contentDescription = "View detail",
+                tint               = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
+            )
 
             // Delete button
             IconButton(onClick = { showConfirm = true }) {
@@ -241,10 +253,7 @@ private fun DetectionThumbnail(photoUrl: String?) {
             )
 
             if (state is AsyncImagePainter.State.Loading) {
-                CircularProgressIndicator(
-                    modifier    = Modifier.size(24.dp),
-                    strokeWidth = 2.dp
-                )
+                CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
             }
             if (state is AsyncImagePainter.State.Error) {
                 Icon(
@@ -298,8 +307,8 @@ private fun EmptyState() {
 private fun formatTimestamp(raw: String?): String {
     if (raw == null) return "—"
     return try {
-        val zdt = ZonedDateTime.parse(raw)
-        zdt.format(DateTimeFormatter.ofPattern("MMM d, yyyy  h:mm a", Locale.US))
+        ZonedDateTime.parse(raw)
+            .format(DateTimeFormatter.ofPattern("MMM d, yyyy  h:mm a", Locale.US))
     } catch (_: Exception) {
         raw.take(19).replace("T", "  ")
     }
