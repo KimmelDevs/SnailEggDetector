@@ -116,19 +116,21 @@ class DetectionRepository {
                 .decodeList<SnailDetection>()
         } catch (e: Exception) {
             Log.e(TAG, "Failed to fetch detections", e)
-            emptyList()
+            throw e
         }
     }
 
     /**
      * Delete a detection row (storage file is kept — add cleanup if needed).
      */
-    suspend fun delete(id: String) {
-        try {
+    suspend fun delete(id: String): Boolean {
+        return try {
             supabase.postgrest["snaildetections"]
                 .delete { filter { eq("id", id) } }
+            true
         } catch (e: Exception) {
             Log.e(TAG, "Failed to delete detection $id", e)
+            false
         }
     }
 
