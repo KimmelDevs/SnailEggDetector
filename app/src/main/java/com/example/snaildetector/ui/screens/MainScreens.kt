@@ -2,6 +2,7 @@ package com.example.snaildetector.ui.screens
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.OptIn
@@ -32,6 +33,8 @@ import com.example.snaildetector.data.DetectionRepository
 import com.example.snaildetector.detection.SnailDetectionOverlay
 import com.example.snaildetector.detection.SnailDetector
 import kotlinx.coroutines.launch
+
+private const val TAG = "DetectScreen"
 
 // ── Home ──────────────────────────────────────────────────────────────────────
 
@@ -85,38 +88,58 @@ fun DetectScreen() {
     }
 
     // ── Auto-save whenever eggs are detected ──────────────────────────────────
-    // Guards: not already saving, count changed, 10-second cooldown between saves
     LaunchedEffect(eggCount) {
         val now        = System.currentTimeMillis()
         val cooldownMs = 10_000L
+        val sinceLastSave = now - lastSaveTimeMs
 
-        if (eggCount > 0
-            && !isSaving
-            && eggCount != lastSavedCount
-            && (now - lastSaveTimeMs) > cooldownMs
-        ) {
-            val frame = overlayRef?.captureFrame()
-            if (frame != null) {
-                isSaving       = true
-                lastSavedCount = eggCount
-                lastSaveTimeMs = now
-                scope.launch {
-                    val saved = repo.save(
-                        frame    = frame,
-                        eggCount = eggCount,
-                        metadata = mapOf("source" to "auto_detect")
-                    )
-                    snackMessage = if (saved != null)
-                        "📸 Saved: $eggCount cluster(s) detected"
-                    else
-                        "❌ Auto-save failed — check connection"
-                    isSaving = false
-                }
-            }
+        Log.d(TAG, "eggCount changed → $eggCount | isSaving=$isSaving " +
+                "| lastSavedCount=$lastSavedCount | sinceLastSave=${sinceLastSave}ms")
+
+        if (eggCount <= 0) {
+            Log.d(TAG, "Skip save: no detections (eggCount=$eggCount)")
+            lastSavedCount = -1
+            return@LaunchedEffect
+        }
+        if (isSaving) {
+            Log.d(TAG, "Skip save: already saving")
+            return@LaunchedEffect
+        }
+        if (eggCount == lastSavedCount) {
+            Log.d(TAG, "Skip save: count unchanged (eggCount=$eggCount == lastSavedCount)")
+            return@LaunchedEffect
+        }
+        if (sinceLastSave <= cooldownMs) {
+            Log.d(TAG, "Skip save: cooldown active (${sinceLastSave}ms < ${cooldownMs}ms)")
+            return@LaunchedEffect
         }
 
-        // Reset so next detection event triggers a fresh save
-        if (eggCount == 0) lastSavedCount = -1
+        val frame = overlayRef?.captureFrame()
+        if (frame == null) {
+            Log.w(TAG, "Skip save: captureFrame() returned null — overlay not ready?")
+            return@LaunchedEffect
+        }
+
+        Log.i(TAG, "Starting save — eggCount=$eggCount frame=${frame.width}x${frame.height}")
+        isSaving       = true
+        lastSavedCount = eggCount
+        lastSaveTimeMs = now
+
+        scope.launch {
+            val saved = repo.save(
+                frame    = frame,
+                eggCount = eggCount,
+                metadata = mapOf("source" to "auto_detect")
+            )
+            if (saved != null) {
+                Log.i(TAG, "Save succeeded — id=${saved.id} eventId=${saved.eventId}")
+                snackMessage = "📸 Saved: $eggCount cluster(s) detected"
+            } else {
+                Log.e(TAG, "Save returned null — see DetectionRepository logs above for cause")
+                snackMessage = "❌ Auto-save failed — check connection"
+            }
+            isSaving = false
+        }
     }
 
     Scaffold(

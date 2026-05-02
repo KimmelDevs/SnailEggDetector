@@ -7,7 +7,6 @@ import io.github.jan.supabase.gotrue.auth
 import io.github.jan.supabase.postgrest.from
 import io.github.jan.supabase.postgrest.query.Order
 import io.github.jan.supabase.storage.storage
-import io.github.jan.supabase.storage.UploadData
 import java.io.ByteArrayOutputStream
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -18,7 +17,7 @@ import kotlin.time.Duration.Companion.days
 class DetectionRepository {
 
     companion object {
-        private const val TAG          = "DetectionRepository"
+        private const val TAG          = "DetectionRepo"
         private const val BUCKET       = "snail-detected"
         private val SIGNED_URL_TTL     = 365.days
         private const val JPEG_QUALITY = 80
@@ -31,57 +30,62 @@ class DetectionRepository {
         eggCount : Int,
         metadata : Map<String, String>? = null
     ): SnailDetection? {
+        Log.i(TAG, "save() called — eggCount=$eggCount bitmap=${frame.width}x${frame.height} recycled=${frame.isRecycled}")
         return try {
 
             // ── Auth check ────────────────────────────────────────────────────
-            val uid = supabase.auth.currentUserOrNull()?.id
+            val user = supabase.auth.currentUserOrNull()
+            Log.d(TAG, "Auth state — user=${user?.id} email=${user?.email} role=${user?.role}")
+            val uid = user?.id
             if (uid == null) {
-                Log.e(TAG, "Save failed: user not logged in")
+                Log.e(TAG, "ABORT: user not logged in (currentUserOrNull returned null)")
                 return null
             }
 
-            val now       = Date()
-            val timestamp = isoTimestamp(now)
-            val eventId   = "det-${timestamp}-android-${shortId()}"
-            val fileName  = "snail-detection-${timestamp}.jpg"
+            val now          = Date()
+            val dbTimestamp  = isoTimestampDb(now)
+            val fileTimestamp = isoTimestampFile(now)
+
+            val eventId      = "det-${fileTimestamp}-android-${shortId()}"
+            val fileName     = "snail-detection-${fileTimestamp}.jpg"
             val filePath  = "${dateFolder(now)}/$eventId-$fileName"
+            Log.d(TAG, "Identifiers — eventId=$eventId filePath=$filePath dbTimestamp=$dbTimestamp")
 
             // ── 1. Compress bitmap → JPEG bytes ───────────────────────────────
             val jpegBytes = compressBitmap(frame)
-            Log.d(TAG, "Compressed frame: ${jpegBytes.size} bytes → $filePath")
+            Log.d(TAG, "STEP 1 — compressed ${frame.width}x${frame.height} → ${jpegBytes.size} bytes (quality=$JPEG_QUALITY)")
 
             // ── 2. Upload to Supabase Storage ─────────────────────────────────
-            // FIX: pass contentType so Supabase doesn't reject the upload.
-            // Without it the SDK sends no Content-Type header and the storage
-            // API returns a 415 / network-looking error on some versions.
+            Log.d(TAG, "STEP 2 — uploading to bucket='$BUCKET' path='$filePath'")
             try {
                 supabase.storage[BUCKET].upload(
                     path   = filePath,
                     data   = jpegBytes,
                     upsert = false,
                 )
-                Log.d(TAG, "Upload OK: $filePath")
+                Log.i(TAG, "STEP 2 OK — upload succeeded: $filePath")
             } catch (e: Exception) {
-                Log.e(TAG, "Upload failed — bucket='$BUCKET' path='$filePath' " +
-                        "error=${e::class.simpleName}: ${e.message}", e)
+                Log.e(TAG, "STEP 2 FAIL — upload exception: ${e::class.qualifiedName}", e)
+                Log.e(TAG, "  message  : ${e.message}")
+                Log.e(TAG, "  cause    : ${e.cause?.message}")
                 return null
             }
 
             // ── 3. Get a signed URL ───────────────────────────────────────────
+            Log.d(TAG, "STEP 3 — creating signed URL (ttl=$SIGNED_URL_TTL)")
             val signedUrl = try {
                 supabase.storage[BUCKET].createSignedUrl(filePath, SIGNED_URL_TTL)
-                    .also { Log.d(TAG, "Signed URL: $it") }
+                    .also { Log.i(TAG, "STEP 3 OK — signedUrl=$it") }
             } catch (e: Exception) {
-                Log.e(TAG, "createSignedUrl failed: ${e.message}", e)
-                // Non-fatal — save the row without a URL rather than aborting
+                Log.w(TAG, "STEP 3 FAIL — createSignedUrl exception (non-fatal, continuing): ${e.message}")
                 null
             }
 
-            // ── 4. Insert the row ─────────────────────────────────────────────
+            // ── 4. Insert DB row ──────────────────────────────────────────────
             val detection = SnailDetection(
                 userId            = uid,
                 eventId           = eventId,
-                capturedAt        = timestamp,
+                capturedAt        = dbTimestamp,
                 eggClusterCount   = eggCount,
                 platform          = "android",
                 metadata          = metadata,
@@ -92,32 +96,35 @@ class DetectionRepository {
                 photoSize         = jpegBytes.size.toLong(),
                 photoUrl          = signedUrl,
             )
-
+            Log.d(TAG, "STEP 4 — inserting row: userId=$uid eventId=$eventId " +
+                    "eggCount=$eggCount photoSize=${jpegBytes.size} photoUrl=${signedUrl?.take(60)}")
             try {
                 supabase.from("snaildetections").insert(detection)
-                Log.d(TAG, "Row inserted for eventId=$eventId")
+                Log.i(TAG, "STEP 4 OK — row inserted for eventId=$eventId")
             } catch (e: Exception) {
-                Log.e(TAG, "DB insert failed: ${e.message}", e)
+                Log.e(TAG, "STEP 4 FAIL — DB insert exception: ${e::class.qualifiedName}", e)
+                Log.e(TAG, "  message  : ${e.message}")
+                Log.e(TAG, "  cause    : ${e.cause?.message}")
                 return null
             }
 
             // ── 5. Re-fetch to get server-assigned id / timestamps ────────────
+            Log.d(TAG, "STEP 5 — re-fetching row for eventId=$eventId")
             val saved = try {
                 supabase.from("snaildetections")
                     .select { filter { eq("event_id", eventId) } }
                     .decodeSingle<SnailDetection>()
-                    .also { Log.d(TAG, "Saved detection id=${it.id}") }
+                    .also { Log.i(TAG, "STEP 5 OK — fetched id=${it.id} capturedAt=${it.capturedAt}") }
             } catch (e: Exception) {
-                Log.e(TAG, "Re-fetch failed (row was saved): ${e.message}", e)
-                // Return the local object rather than null — row was inserted
+                Log.w(TAG, "STEP 5 FAIL — re-fetch failed (row WAS saved, returning local copy): ${e.message}")
                 detection
             }
 
+            Log.i(TAG, "save() complete — returning id=${saved.id}")
             saved
 
         } catch (e: Exception) {
-            // Catch-all — log the full stack trace so you can see the real error
-            Log.e(TAG, "Unexpected error in save(): ${e::class.simpleName}: ${e.message}", e)
+            Log.e(TAG, "save() UNEXPECTED exception: ${e::class.qualifiedName}: ${e.message}", e)
             null
         }
     }
@@ -127,24 +134,27 @@ class DetectionRepository {
     suspend fun getAll(): List<SnailDetection> {
         val uid = supabase.auth.currentUserOrNull()?.id
             ?: throw IllegalStateException("User not logged in")
+        Log.d(TAG, "getAll() for uid=$uid")
         return supabase.from("snaildetections")
             .select {
                 filter { eq("user_id", uid) }
                 order("captured_at", Order.DESCENDING)
             }
             .decodeList<SnailDetection>()
+            .also { Log.d(TAG, "getAll() returned ${it.size} rows") }
     }
 
-    // ── Delete a row (storage file is kept) ──────────────────────────────────
+    // ── Delete a row ──────────────────────────────────────────────────────────
 
     suspend fun delete(id: String): Boolean {
+        Log.d(TAG, "delete() id=$id")
         return try {
             supabase.from("snaildetections")
                 .delete { filter { eq("id", id) } }
-            Log.d(TAG, "Deleted detection id=$id")
+            Log.i(TAG, "delete() OK — id=$id")
             true
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to delete detection $id: ${e.message}", e)
+            Log.e(TAG, "delete() FAIL — id=$id: ${e.message}", e)
             false
         }
     }
@@ -157,11 +167,12 @@ class DetectionRepository {
         return out.toByteArray()
     }
 
-    // FIX: the original timestamp used colons in HH:mm:ss which are illegal
-    // in file paths on some systems and cause Supabase Storage to reject the
-    // upload with a path validation error (looks like a network error in logs).
-    // Changed separator to hyphens: HH-mm-ss → safe on all platforms.
-    private fun isoTimestamp(date: Date): String =
+    // Proper ISO 8601 with colons + UTC suffix — accepted by Postgres timestamptz
+    private fun isoTimestampDb(date: Date): String =
+        SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US).also { it.timeZone = java.util.TimeZone.getTimeZone("UTC") }.format(date)
+
+    // Hyphenated time — safe for use in file/folder names
+    private fun isoTimestampFile(date: Date): String =
         SimpleDateFormat("yyyy-MM-dd'T'HH-mm-ss", Locale.US).format(date)
 
     private fun dateFolder(date: Date): String =
