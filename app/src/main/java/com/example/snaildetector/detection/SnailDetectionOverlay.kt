@@ -42,7 +42,6 @@ import java.util.concurrent.Executors
  *       update   = { it.switchCamera(facing) }
  *   )
  */
-@ExperimentalGetImage
 @SuppressLint("ViewConstructor")
 class SnailDetectionOverlay(
     private val lifecycleOwner : LifecycleOwner,
@@ -63,7 +62,7 @@ class SnailDetectionOverlay(
     // Most recent rotated frame — safe to read from any thread
     @Volatile private var latestFrame: Bitmap? = null
 
-    /** Call this when auto-save triggers — returns a copy of the latest frame. */
+    /** Called by auto-save — returns a copy of the latest camera frame. */
     fun captureFrame(): Bitmap? {
         val bmp = latestFrame ?: return null
         return bmp.copy(bmp.config ?: Bitmap.Config.ARGB_8888, false)
@@ -71,18 +70,18 @@ class SnailDetectionOverlay(
 
     // Temporal smoothing — stabilises the count across frames
     private val tracker = DetectionTracker(
-        confirmFrames  = 2,    // must be seen 2 frames in a row before showing
-        maxMissFrames  = 5,    // keep showing for 5 frames after it disappears
-        smoothAlpha    = 0.4f, // EMA weight: higher = snappier but jitterier
-        iouMatchThresh = 0.3f  // IoU needed to link a new box to a tracked one
+        confirmFrames  = 2,
+        maxMissFrames  = 5,
+        smoothAlpha    = 0.4f,
+        iouMatchThresh = 0.3f
     )
 
     // Matrix to rotate the raw camera frame to upright orientation
     private var imageRotationMatrix = Matrix()
     private var rotationInitialized = false
 
-    private lateinit var previewView      : PreviewView
-    private lateinit var boundingBoxView  : BoundingBoxView
+    private lateinit var previewView     : PreviewView
+    private lateinit var boundingBoxView : BoundingBoxView
 
     // Latest scaled detections — read by BoundingBoxView.onDraw()
     @Volatile private var currentDetections: List<SnailDetector.Detection> = emptyList()
@@ -101,7 +100,7 @@ class SnailDetectionOverlay(
         previewView     = PreviewView(context)
         boundingBoxView = BoundingBoxView(context)
 
-        addView(previewView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+        addView(previewView,     LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
         addView(boundingBoxView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
 
         startCamera(cameraFacing)
@@ -146,7 +145,7 @@ class SnailDetectionOverlay(
 
     // ── Frame analyser ────────────────────────────────────────────────────────
 
-    @androidx.camera.core.ExperimentalGetImage
+    @ExperimentalGetImage
     private val frameAnalyzer = ImageAnalysis.Analyzer { imageProxy ->
         if (isProcessing) { imageProxy.close(); return@Analyzer }
         isProcessing = true
@@ -159,7 +158,7 @@ class SnailDetectionOverlay(
         )
         frame.copyPixelsFromBuffer(imageProxy.planes[0].buffer)
 
-        // Rotate to upright
+        // Rotate to upright once, then reuse the matrix
         if (!rotationInitialized) {
             imageRotationMatrix = Matrix().apply {
                 postRotate(imageProxy.imageInfo.rotationDegrees.toFloat())
@@ -200,9 +199,8 @@ class SnailDetectionOverlay(
 
     inner class BoundingBoxView(context: Context) : SurfaceView(context), SurfaceHolder.Callback {
 
-        // Box styles — red fill + red stroke, matching the notebook's #e74c3c
         private val fillPaint = Paint().apply {
-            color = Color.argb(60, 231, 76, 60)   // #e74c3c at ~24% opacity
+            color = Color.argb(60, 231, 76, 60)
             style = Paint.Style.FILL
         }
         private val strokePaint = Paint().apply {
@@ -215,10 +213,10 @@ class SnailDetectionOverlay(
             style = Paint.Style.FILL
         }
         private val labelPaint = Paint().apply {
-            color       = Color.WHITE
-            textSize    = 32f
+            color          = Color.WHITE
+            textSize       = 32f
             isFakeBoldText = true
-            typeface    = android.graphics.Typeface.DEFAULT_BOLD
+            typeface       = android.graphics.Typeface.DEFAULT_BOLD
         }
         private val confPaint = Paint().apply {
             color    = Color.WHITE
@@ -241,11 +239,9 @@ class SnailDetectionOverlay(
             currentDetections.forEach { det ->
                 val box = det.bbox
 
-                // Filled rounded rect + border
                 canvas.drawRoundRect(box, 16f, 16f, fillPaint)
                 canvas.drawRoundRect(box, 16f, 16f, strokePaint)
 
-                // Label: "fushouluo 87%"
                 val text   = "${det.label.uppercase()} ${(det.confidence * 100).toInt()}%"
                 val bounds = android.graphics.Rect()
                 labelPaint.getTextBounds(text, 0, text.length, bounds)
@@ -253,12 +249,10 @@ class SnailDetectionOverlay(
                 val labelX = box.left
                 var labelY = box.top - 10f
 
-                // Flip label below box if it would go off-screen
                 if (labelY - bounds.height() - 8f < 0f) {
                     labelY = box.bottom + bounds.height() + 10f
                 }
 
-                // Dark background pill behind label
                 canvas.drawRect(
                     labelX - 6f,
                     labelY - bounds.height() - 8f,
@@ -268,7 +262,6 @@ class SnailDetectionOverlay(
                 )
                 canvas.drawText(text, labelX, labelY, labelPaint)
 
-                // Confidence readout inside bottom-right of box
                 val confText = "${(det.confidence * 100).toInt()}%"
                 canvas.drawText(confText, box.right - 56f, box.bottom - 8f, confPaint)
             }
