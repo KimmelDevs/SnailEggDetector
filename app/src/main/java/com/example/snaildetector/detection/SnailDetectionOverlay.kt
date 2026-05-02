@@ -21,7 +21,6 @@ import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
-import androidx.core.view.doOnLayout
 import androidx.lifecycle.LifecycleOwner
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -29,68 +28,42 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.concurrent.Executors
 
-/**
- * Drop-in View that:
- *  1. Shows a live CameraX preview
- *  2. Runs SnailDetector on every frame (background thread)
- *  3. Draws bounding boxes on a transparent SurfaceView overlay
- *
- * Usage in Compose:
- *   AndroidView(
- *       modifier = Modifier.fillMaxSize(),
- *       factory  = { SnailDetectionOverlay(lifecycleOwner, it, detector) },
- *       update   = { it.switchCamera(facing) }
- *   )
- */
 @SuppressLint("ViewConstructor")
 class SnailDetectionOverlay(
     private val lifecycleOwner : LifecycleOwner,
     context                    : Context,
     private val detector       : SnailDetector,
-    /** Called on the main thread after each frame is processed. */
     val onDetectionResult      : (List<SnailDetector.Detection>) -> Unit = {}
 ) : FrameLayout(context) {
 
     companion object { private const val TAG = "SnailDetectionOverlay" }
 
-    private var overlayW = 0
-    private var overlayH = 0
-
     private var cameraFacing = CameraSelector.LENS_FACING_BACK
     private var isProcessing = false
 
-    // Most recent rotated frame — safe to read from any thread
     @Volatile private var latestFrame: Bitmap? = null
 
-    /** Called by auto-save — returns a copy of the latest camera frame. */
     fun captureFrame(): Bitmap? {
         val bmp = latestFrame ?: return null
         return bmp.copy(bmp.config ?: Bitmap.Config.ARGB_8888, false)
     }
 
-    // Temporal smoothing — stabilises the count across frames
     private val tracker = DetectionTracker(
-        confirmFrames  = 2,
+        confirmFrames  = 1,
         maxMissFrames  = 5,
         smoothAlpha    = 0.4f,
         iouMatchThresh = 0.3f
     )
 
-    // Matrix to rotate the raw camera frame to upright orientation
     private var imageRotationMatrix = Matrix()
     private var rotationInitialized = false
 
     private lateinit var previewView     : PreviewView
     private lateinit var boundingBoxView : BoundingBoxView
 
-    // Latest scaled detections — read by BoundingBoxView.onDraw()
     @Volatile private var currentDetections: List<SnailDetector.Detection> = emptyList()
 
     init {
-        doOnLayout {
-            overlayW = measuredWidth
-            overlayH = measuredHeight
-        }
         attachViews()
     }
 
@@ -150,7 +123,12 @@ class SnailDetectionOverlay(
         if (isProcessing) { imageProxy.close(); return@Analyzer }
         isProcessing = true
 
-        // Convert RGBA_8888 ImageProxy → Bitmap
+        // FIX: read overlay dimensions directly at frame time.
+        // doOnLayout was a race — early frames saw 0x0 and produced zero-sized
+        // boxes that the tracker never confirmed, so nothing ever appeared.
+        val w = width.takeIf  { it > 0 } ?: imageProxy.width
+        val h = height.takeIf { it > 0 } ?: imageProxy.height
+
         var frame = Bitmap.createBitmap(
             imageProxy.image!!.width,
             imageProxy.image!!.height,
@@ -158,7 +136,6 @@ class SnailDetectionOverlay(
         )
         frame.copyPixelsFromBuffer(imageProxy.planes[0].buffer)
 
-        // Rotate to upright once, then reuse the matrix
         if (!rotationInitialized) {
             imageRotationMatrix = Matrix().apply {
                 postRotate(imageProxy.imageInfo.rotationDegrees.toFloat())
@@ -167,21 +144,17 @@ class SnailDetectionOverlay(
         }
         frame = Bitmap.createBitmap(frame, 0, 0, frame.width, frame.height, imageRotationMatrix, false)
 
-        // Store for on-demand capture
         latestFrame = frame
 
         val isFront = (cameraFacing == CameraSelector.LENS_FACING_FRONT)
 
         CoroutineScope(Dispatchers.Default).launch {
-            // Run YOLOv8 inference
             val rawDetections = detector.detect(frame)
 
-            // Scale from model space → overlay screen space
             val scaled = rawDetections.map {
-                detector.scaleToOverlay(it, overlayW, overlayH, mirrorX = isFront)
+                detector.scaleToOverlay(it, w, h, mirrorX = isFront)
             }
 
-            // Stabilise across frames — prevents count flickering
             val stable = tracker.update(scaled)
 
             withContext(Dispatchers.Main) {
