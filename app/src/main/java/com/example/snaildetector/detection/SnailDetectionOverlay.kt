@@ -49,9 +49,7 @@ class SnailDetectionOverlay(
     context                    : Context,
     private val detector       : SnailDetector,
     /** Called on the main thread after each frame is processed. */
-    val onDetectionResult      : (List<SnailDetector.Detection>) -> Unit = {},
-    /** Called with the rotated bitmap after every processed frame — use this to capture for saving. */
-    val onFrameCaptured        : ((Bitmap) -> Unit)? = null
+    val onDetectionResult      : (List<SnailDetector.Detection>) -> Unit = {}
 ) : FrameLayout(context) {
 
     companion object { private const val TAG = "SnailDetectionOverlay" }
@@ -61,6 +59,15 @@ class SnailDetectionOverlay(
 
     private var cameraFacing = CameraSelector.LENS_FACING_BACK
     private var isProcessing = false
+
+    // Most recent rotated frame — safe to read from any thread
+    @Volatile private var latestFrame: Bitmap? = null
+
+    /** Call this when auto-save triggers — returns a copy of the latest frame. */
+    fun captureFrame(): Bitmap? {
+        val bmp = latestFrame ?: return null
+        return bmp.copy(bmp.config ?: Bitmap.Config.ARGB_8888, false)
+    }
 
     // Temporal smoothing — stabilises the count across frames
     private val tracker = DetectionTracker(
@@ -161,6 +168,9 @@ class SnailDetectionOverlay(
         }
         frame = Bitmap.createBitmap(frame, 0, 0, frame.width, frame.height, imageRotationMatrix, false)
 
+        // Store for on-demand capture
+        latestFrame = frame
+
         val isFront = (cameraFacing == CameraSelector.LENS_FACING_FRONT)
 
         CoroutineScope(Dispatchers.Default).launch {
@@ -177,7 +187,6 @@ class SnailDetectionOverlay(
 
             withContext(Dispatchers.Main) {
                 currentDetections = stable
-                onFrameCaptured?.invoke(frame)   // expose frame for saving
                 onDetectionResult(stable)
                 boundingBoxView.invalidate()
                 isProcessing = false

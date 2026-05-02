@@ -2,10 +2,11 @@ package com.example.snaildetector.ui.screens
 
 import android.Manifest
 import android.content.pm.PackageManager
-import android.graphics.Bitmap
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.OptIn
 import androidx.camera.core.CameraSelector
+import androidx.camera.core.ExperimentalGetImage
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -13,7 +14,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Camera
 import androidx.compose.material.icons.filled.Cameraswitch
-import androidx.compose.material.icons.filled.Save
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -42,6 +42,7 @@ fun HomeScreen() {
 
 // ── Detect ────────────────────────────────────────────────────────────────────
 
+@OptIn(ExperimentalGetImage::class)
 @Composable
 fun DetectScreen() {
     val context        = LocalContext.current
@@ -69,17 +70,53 @@ fun DetectScreen() {
     var cameraFacing   by remember { mutableIntStateOf(CameraSelector.LENS_FACING_BACK) }
     var detectionText  by remember { mutableStateOf("Scanning…") }
     var eggCount       by remember { mutableIntStateOf(0) }
-
-    var latestFrame    by remember { mutableStateOf<Bitmap?>(null) }
     var isSaving       by remember { mutableStateOf(false) }
-    var snackMessage   by remember { mutableStateOf<String?>(null) }
+    var lastSavedCount by remember { mutableIntStateOf(-1) }
+    var lastSaveTimeMs by remember { mutableLongStateOf(0L) }
+    var overlayRef     by remember { mutableStateOf<SnailDetectionOverlay?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
+    var snackMessage   by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(snackMessage) {
         snackMessage?.let {
             snackbarHostState.showSnackbar(it)
             snackMessage = null
         }
+    }
+
+    // ── Auto-save whenever eggs are detected ──────────────────────────────────
+    // Guards: not already saving, count changed, 10-second cooldown between saves
+    LaunchedEffect(eggCount) {
+        val now        = System.currentTimeMillis()
+        val cooldownMs = 10_000L
+
+        if (eggCount > 0
+            && !isSaving
+            && eggCount != lastSavedCount
+            && (now - lastSaveTimeMs) > cooldownMs
+        ) {
+            val frame = overlayRef?.captureFrame()
+            if (frame != null) {
+                isSaving       = true
+                lastSavedCount = eggCount
+                lastSaveTimeMs = now
+                scope.launch {
+                    val saved = repo.save(
+                        frame    = frame,
+                        eggCount = eggCount,
+                        metadata = mapOf("source" to "auto_detect")
+                    )
+                    snackMessage = if (saved != null)
+                        "📸 Saved: $eggCount cluster(s) detected"
+                    else
+                        "❌ Auto-save failed — check connection"
+                    isSaving = false
+                }
+            }
+        }
+
+        // Reset so next detection event triggers a fresh save
+        if (eggCount == 0) lastSavedCount = -1
     }
 
     Scaffold(
@@ -105,78 +142,43 @@ fun DetectScreen() {
                             onDetectionResult = { dets ->
                                 eggCount      = dets.size
                                 detectionText = if (dets.isEmpty()) "No eggs detected"
-                                else "🥚 ${dets.size} egg region(s) detected"
-                            },
-                            onFrameCaptured   = { bmp -> latestFrame = bmp }
-                        )
+                                else "🥚 ${dets.size} cluster(s) detected"
+                            }
+                        ).also { ov -> overlayRef = ov }
                     },
                     update = { it.switchCamera(cameraFacing) }
                 )
 
-                // Status chip + save button — bottom center
-                Column(
-                    modifier            = Modifier
+                // Status chip — shows detection + saving spinner
+                Box(
+                    modifier         = Modifier
                         .fillMaxWidth()
                         .align(Alignment.BottomCenter)
                         .padding(bottom = 100.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                    contentAlignment = Alignment.Center
                 ) {
                     Surface(
                         shape           = RoundedCornerShape(24.dp),
                         color           = if (eggCount > 0) Color(0xCCE74C3C) else Color(0xCC000000),
                         shadowElevation = 4.dp
                     ) {
-                        Text(
-                            text       = detectionText,
-                            color      = Color.White,
-                            fontSize   = 14.sp,
-                            fontWeight = FontWeight.Bold,
-                            modifier   = Modifier.padding(horizontal = 20.dp, vertical = 10.dp)
-                        )
-                    }
-
-                    if (eggCount > 0) {
-                        Button(
-                            onClick = {
-                                val frame = latestFrame
-                                if (frame != null && !isSaving) {
-                                    isSaving = true
-                                    scope.launch {
-                                        val saved = repo.save(
-                                            frame    = frame,
-                                            eggCount = eggCount,
-                                            metadata = mapOf("source" to "manual_save")
-                                        )
-                                        snackMessage = if (saved != null)
-                                            "✅ Detection saved!"
-                                        else
-                                            "❌ Failed to save — check connection"
-                                        isSaving = false
-                                    }
-                                }
-                            },
-                            enabled = !isSaving,
-                            colors  = ButtonDefaults.buttonColors(containerColor = Color(0xCCE74C3C)),
-                            shape   = RoundedCornerShape(24.dp)
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier          = Modifier.padding(horizontal = 20.dp, vertical = 10.dp)
                         ) {
+                            Text(
+                                text       = detectionText,
+                                color      = Color.White,
+                                fontSize   = 14.sp,
+                                fontWeight = FontWeight.Bold
+                            )
                             if (isSaving) {
+                                Spacer(modifier = Modifier.width(10.dp))
                                 CircularProgressIndicator(
-                                    modifier    = Modifier.size(16.dp),
+                                    modifier    = Modifier.size(14.dp),
                                     color       = Color.White,
                                     strokeWidth = 2.dp
                                 )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text("Saving…", color = Color.White)
-                            } else {
-                                Icon(
-                                    Icons.Default.Save,
-                                    contentDescription = null,
-                                    tint     = Color.White,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("Save Detection", color = Color.White, fontWeight = FontWeight.Bold)
                             }
                         }
                     }
@@ -192,7 +194,9 @@ fun DetectScreen() {
                             cameraFacing = if (cameraFacing == CameraSelector.LENS_FACING_BACK)
                                 CameraSelector.LENS_FACING_FRONT else CameraSelector.LENS_FACING_BACK
                         },
-                        modifier = Modifier.size(44.dp).background(Color.Black.copy(alpha = 0.6f), CircleShape)
+                        modifier = Modifier
+                            .size(44.dp)
+                            .background(Color.Black.copy(alpha = 0.6f), CircleShape)
                     ) {
                         Icon(Icons.Default.Cameraswitch, contentDescription = "Switch camera",
                             tint = Color.White, modifier = Modifier.size(20.dp))
@@ -233,8 +237,9 @@ fun DetectScreen() {
                         color = Color.Gray, fontSize = 13.sp, textAlign = TextAlign.Center,
                         modifier = Modifier.padding(horizontal = 32.dp))
                     Spacer(modifier = Modifier.height(24.dp))
-                    Button(onClick = { permissionLauncher.launch(Manifest.permission.CAMERA) },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1AA3CC))
+                    Button(
+                        onClick = { permissionLauncher.launch(Manifest.permission.CAMERA) },
+                        colors  = ButtonDefaults.buttonColors(containerColor = Color(0xFF1AA3CC))
                     ) { Text("Grant permission", color = Color.White) }
                 }
             }
