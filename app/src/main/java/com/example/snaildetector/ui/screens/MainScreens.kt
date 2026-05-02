@@ -70,13 +70,11 @@ fun DetectScreen() {
     var detectionText  by remember { mutableStateOf("Scanning…") }
     var eggCount       by remember { mutableIntStateOf(0) }
 
-    // Holds the latest frame bitmap so we can save it
     var latestFrame    by remember { mutableStateOf<Bitmap?>(null) }
     var isSaving       by remember { mutableStateOf(false) }
     var snackMessage   by remember { mutableStateOf<String?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
 
-    // Show snackbar whenever snackMessage is set
     LaunchedEffect(snackMessage) {
         snackMessage?.let {
             snackbarHostState.showSnackbar(it)
@@ -85,7 +83,7 @@ fun DetectScreen() {
     }
 
     Scaffold(
-        snackbarHost = { SnackbarHost(snackbarHostState) },
+        snackbarHost   = { SnackbarHost(snackbarHostState) },
         containerColor = Color.Black
     ) { innerPadding ->
 
@@ -97,7 +95,6 @@ fun DetectScreen() {
 
             if (hasCameraPermission) {
 
-                // Live camera + bounding-box overlay
                 AndroidView(
                     modifier = Modifier.fillMaxSize(),
                     factory  = {
@@ -109,13 +106,14 @@ fun DetectScreen() {
                                 eggCount      = dets.size
                                 detectionText = if (dets.isEmpty()) "No eggs detected"
                                 else "🥚 ${dets.size} egg region(s) detected"
-                            }
+                            },
+                            onFrameCaptured   = { bmp -> latestFrame = bmp }
                         )
                     },
                     update = { it.switchCamera(cameraFacing) }
                 )
 
-                // Status chip — bottom center
+                // Status chip + save button — bottom center
                 Column(
                     modifier            = Modifier
                         .fillMaxWidth()
@@ -138,7 +136,6 @@ fun DetectScreen() {
                         )
                     }
 
-                    // Save button — only visible when eggs are detected
                     if (eggCount > 0) {
                         Button(
                             onClick = {
@@ -160,9 +157,7 @@ fun DetectScreen() {
                                 }
                             },
                             enabled = !isSaving,
-                            colors  = ButtonDefaults.buttonColors(
-                                containerColor = Color(0xCCE74C3C)
-                            ),
+                            colors  = ButtonDefaults.buttonColors(containerColor = Color(0xCCE74C3C)),
                             shape   = RoundedCornerShape(24.dp)
                         ) {
                             if (isSaving) {
@@ -189,10 +184,7 @@ fun DetectScreen() {
 
                 // Camera switch — top right
                 Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .statusBarsPadding()
-                        .padding(16.dp),
+                    modifier         = Modifier.fillMaxWidth().statusBarsPadding().padding(16.dp),
                     contentAlignment = Alignment.TopEnd
                 ) {
                     IconButton(
@@ -200,31 +192,19 @@ fun DetectScreen() {
                             cameraFacing = if (cameraFacing == CameraSelector.LENS_FACING_BACK)
                                 CameraSelector.LENS_FACING_FRONT else CameraSelector.LENS_FACING_BACK
                         },
-                        modifier = Modifier
-                            .size(44.dp)
-                            .background(Color.Black.copy(alpha = 0.6f), CircleShape)
+                        modifier = Modifier.size(44.dp).background(Color.Black.copy(alpha = 0.6f), CircleShape)
                     ) {
-                        Icon(
-                            imageVector        = Icons.Default.Cameraswitch,
-                            contentDescription = "Switch camera",
-                            tint               = Color.White,
-                            modifier           = Modifier.size(20.dp)
-                        )
+                        Icon(Icons.Default.Cameraswitch, contentDescription = "Switch camera",
+                            tint = Color.White, modifier = Modifier.size(20.dp))
                     }
                 }
 
                 // Title pill — top center
                 Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .statusBarsPadding()
-                        .padding(16.dp),
+                    modifier         = Modifier.fillMaxWidth().statusBarsPadding().padding(16.dp),
                     contentAlignment = Alignment.TopCenter
                 ) {
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = Color.Black.copy(alpha = 0.55f)
-                    ) {
+                    Surface(shape = RoundedCornerShape(12.dp), color = Color.Black.copy(alpha = 0.55f)) {
                         Text(
                             text       = "🐌  Snail Egg Detector",
                             color      = Color.White,
@@ -238,43 +218,24 @@ fun DetectScreen() {
 
             } else {
 
-                // Permission denied UI
                 Column(
-                    modifier            = Modifier
-                        .fillMaxSize()
-                        .background(Color.Black),
+                    modifier            = Modifier.fillMaxSize().background(Color.Black),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center
                 ) {
-                    Icon(
-                        imageVector        = Icons.Default.Camera,
-                        contentDescription = null,
-                        tint               = Color(0xFF1AA3CC),
-                        modifier           = Modifier.size(72.dp)
-                    )
+                    Icon(Icons.Default.Camera, contentDescription = null,
+                        tint = Color(0xFF1AA3CC), modifier = Modifier.size(72.dp))
                     Spacer(modifier = Modifier.height(20.dp))
-                    Text(
-                        "Camera permission required",
-                        color      = Color.White,
-                        fontSize   = 18.sp,
-                        fontWeight = FontWeight.Bold,
-                        textAlign  = TextAlign.Center
-                    )
+                    Text("Camera permission required", color = Color.White,
+                        fontSize = 18.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
                     Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        "Needed to scan for snail egg clusters in real time.",
-                        color     = Color.Gray,
-                        fontSize  = 13.sp,
-                        textAlign = TextAlign.Center,
-                        modifier  = Modifier.padding(horizontal = 32.dp)
-                    )
+                    Text("Needed to scan for snail egg clusters in real time.",
+                        color = Color.Gray, fontSize = 13.sp, textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(horizontal = 32.dp))
                     Spacer(modifier = Modifier.height(24.dp))
-                    Button(
-                        onClick = { permissionLauncher.launch(Manifest.permission.CAMERA) },
-                        colors  = ButtonDefaults.buttonColors(containerColor = Color(0xFF1AA3CC))
-                    ) {
-                        Text("Grant permission", color = Color.White)
-                    }
+                    Button(onClick = { permissionLauncher.launch(Manifest.permission.CAMERA) },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1AA3CC))
+                    ) { Text("Grant permission", color = Color.White) }
                 }
             }
         }
@@ -285,22 +246,13 @@ fun DetectScreen() {
 
 @Composable
 private fun BlankPlaceholder(label: String) {
-    Box(
-        modifier         = Modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center
-    ) {
+    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(
-                text  = label,
-                style = MaterialTheme.typography.headlineMedium,
-                color = MaterialTheme.colorScheme.primary
-            )
+            Text(text = label, style = MaterialTheme.typography.headlineMedium,
+                color = MaterialTheme.colorScheme.primary)
             Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text  = "Coming soon",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-            )
+            Text(text = "Coming soon", style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
         }
     }
 }

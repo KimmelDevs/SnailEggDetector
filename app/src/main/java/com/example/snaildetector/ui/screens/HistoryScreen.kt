@@ -44,7 +44,8 @@ fun HistoryScreen() {
         try {
             detections = repo.getAll()
         } catch (e: Exception) {
-            errorMessage = e.message
+            errorMessage = e.message ?: "Unknown error"
+            android.util.Log.e("HistoryScreen", "Failed to load detections", e)
         } finally {
             isLoading = false
         }

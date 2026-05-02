@@ -49,7 +49,9 @@ class SnailDetectionOverlay(
     context                    : Context,
     private val detector       : SnailDetector,
     /** Called on the main thread after each frame is processed. */
-    val onDetectionResult      : (List<SnailDetector.Detection>) -> Unit = {}
+    val onDetectionResult      : (List<SnailDetector.Detection>) -> Unit = {},
+    /** Called with the rotated bitmap after every processed frame — use this to capture for saving. */
+    val onFrameCaptured        : ((Bitmap) -> Unit)? = null
 ) : FrameLayout(context) {
 
     companion object { private const val TAG = "SnailDetectionOverlay" }
@@ -175,6 +177,7 @@ class SnailDetectionOverlay(
 
             withContext(Dispatchers.Main) {
                 currentDetections = stable
+                onFrameCaptured?.invoke(frame)   // expose frame for saving
                 onDetectionResult(stable)
                 boundingBoxView.invalidate()
                 isProcessing = false
