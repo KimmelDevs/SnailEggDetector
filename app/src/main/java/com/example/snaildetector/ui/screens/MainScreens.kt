@@ -36,13 +36,6 @@ import kotlinx.coroutines.launch
 
 private const val TAG = "DetectScreen"
 
-// ── Home ──────────────────────────────────────────────────────────────────────
-
-@Composable
-fun HomeScreen() {
-    BlankPlaceholder(label = "Home")
-}
-
 // ── Detect ────────────────────────────────────────────────────────────────────
 
 @OptIn(ExperimentalGetImage::class)
@@ -87,10 +80,10 @@ fun DetectScreen() {
         }
     }
 
-    // ── Auto-save whenever eggs are detected ──────────────────────────────────
+    // Auto-save whenever eggs are detected
     LaunchedEffect(eggCount) {
-        val now        = System.currentTimeMillis()
-        val cooldownMs = 10_000L
+        val now           = System.currentTimeMillis()
+        val cooldownMs    = 10_000L
         val sinceLastSave = now - lastSaveTimeMs
 
         Log.d(TAG, "eggCount changed → $eggCount | isSaving=$isSaving " +
@@ -172,7 +165,7 @@ fun DetectScreen() {
                     update = { it.switchCamera(cameraFacing) }
                 )
 
-                // Status chip — shows detection + saving spinner
+                // Status chip
                 Box(
                     modifier         = Modifier
                         .fillMaxWidth()
@@ -209,11 +202,14 @@ fun DetectScreen() {
 
                 // Camera switch — top right
                 Box(
-                    modifier         = Modifier.fillMaxWidth().statusBarsPadding().padding(16.dp),
+                    modifier         = Modifier
+                        .fillMaxWidth()
+                        .statusBarsPadding()
+                        .padding(16.dp),
                     contentAlignment = Alignment.TopEnd
                 ) {
                     IconButton(
-                        onClick = {
+                        onClick  = {
                             cameraFacing = if (cameraFacing == CameraSelector.LENS_FACING_BACK)
                                 CameraSelector.LENS_FACING_FRONT else CameraSelector.LENS_FACING_BACK
                         },
@@ -221,17 +217,27 @@ fun DetectScreen() {
                             .size(44.dp)
                             .background(Color.Black.copy(alpha = 0.6f), CircleShape)
                     ) {
-                        Icon(Icons.Default.Cameraswitch, contentDescription = "Switch camera",
-                            tint = Color.White, modifier = Modifier.size(20.dp))
+                        Icon(
+                            Icons.Default.Cameraswitch,
+                            contentDescription = "Switch camera",
+                            tint               = Color.White,
+                            modifier           = Modifier.size(20.dp)
+                        )
                     }
                 }
 
                 // Title pill — top center
                 Box(
-                    modifier         = Modifier.fillMaxWidth().statusBarsPadding().padding(16.dp),
+                    modifier         = Modifier
+                        .fillMaxWidth()
+                        .statusBarsPadding()
+                        .padding(16.dp),
                     contentAlignment = Alignment.TopCenter
                 ) {
-                    Surface(shape = RoundedCornerShape(12.dp), color = Color.Black.copy(alpha = 0.55f)) {
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = Color.Black.copy(alpha = 0.55f)
+                    ) {
                         Text(
                             text       = "🐌  Snail Egg Detector",
                             color      = Color.White,
@@ -246,19 +252,34 @@ fun DetectScreen() {
             } else {
 
                 Column(
-                    modifier            = Modifier.fillMaxSize().background(Color.Black),
+                    modifier            = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center
                 ) {
-                    Icon(Icons.Default.Camera, contentDescription = null,
-                        tint = Color(0xFF1AA3CC), modifier = Modifier.size(72.dp))
+                    Icon(
+                        Icons.Default.Camera,
+                        contentDescription = null,
+                        tint               = Color(0xFF1AA3CC),
+                        modifier           = Modifier.size(72.dp)
+                    )
                     Spacer(modifier = Modifier.height(20.dp))
-                    Text("Camera permission required", color = Color.White,
-                        fontSize = 18.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
+                    Text(
+                        "Camera permission required",
+                        color      = Color.White,
+                        fontSize   = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        textAlign  = TextAlign.Center
+                    )
                     Spacer(modifier = Modifier.height(8.dp))
-                    Text("Needed to scan for snail egg clusters in real time.",
-                        color = Color.Gray, fontSize = 13.sp, textAlign = TextAlign.Center,
-                        modifier = Modifier.padding(horizontal = 32.dp))
+                    Text(
+                        "Needed to scan for snail egg clusters in real time.",
+                        color     = Color.Gray,
+                        fontSize  = 13.sp,
+                        textAlign = TextAlign.Center,
+                        modifier  = Modifier.padding(horizontal = 32.dp)
+                    )
                     Spacer(modifier = Modifier.height(24.dp))
                     Button(
                         onClick = { permissionLauncher.launch(Manifest.permission.CAMERA) },
@@ -266,21 +287,6 @@ fun DetectScreen() {
                     ) { Text("Grant permission", color = Color.White) }
                 }
             }
-        }
-    }
-}
-
-// ── Internal helper ───────────────────────────────────────────────────────────
-
-@Composable
-private fun BlankPlaceholder(label: String) {
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(text = label, style = MaterialTheme.typography.headlineMedium,
-                color = MaterialTheme.colorScheme.primary)
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(text = "Coming soon", style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
         }
     }
 }

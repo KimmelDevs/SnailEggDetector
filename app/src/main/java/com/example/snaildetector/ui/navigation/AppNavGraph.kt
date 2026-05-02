@@ -25,10 +25,11 @@ import io.github.jan.supabase.gotrue.SessionStatus
 
 @Composable
 fun AppNavGraph() {
-    val navController = rememberNavController()
-    val navBackStack by navController.currentBackStackEntryAsState()
+    val navController      = rememberNavController()
+    val navBackStack       by navController.currentBackStackEntryAsState()
     val currentDestination = navBackStack?.destination
 
+    // ── Auth state listener ───────────────────────────────────────────────────
     LaunchedEffect(Unit) {
         supabase.auth.sessionStatus.collect { status ->
             when (status) {
@@ -47,7 +48,7 @@ fun AppNavGraph() {
         }
     }
 
-    val mainRoutes = bottomNavItems.map { it.screen.route }
+    val mainRoutes    = bottomNavItems.map { it.screen.route }
     val showBottomBar = currentDestination?.route in mainRoutes
 
     Scaffold(
@@ -81,6 +82,8 @@ fun AppNavGraph() {
             startDestination = Screen.Login.route,
             modifier         = Modifier.padding(innerPadding)
         ) {
+
+            // ── Auth screens ──────────────────────────────────────────────────
             composable(Screen.Login.route) {
                 LoginScreen(
                     onNavigateToSignUp = { navController.navigate(Screen.SignUp.route) },
@@ -91,6 +94,7 @@ fun AppNavGraph() {
                     }
                 )
             }
+
             composable(Screen.SignUp.route) {
                 SignUpScreen(
                     onNavigateToLogin = { navController.popBackStack() },
@@ -102,8 +106,34 @@ fun AppNavGraph() {
                 )
             }
 
-            composable(Screen.Home.route)    { HomeScreen() }
-            composable(Screen.Detect.route)  { DetectScreen() }
+            // ── Main tabs ─────────────────────────────────────────────────────
+            composable(Screen.Home.route) {
+                HomeScreen(
+                    onNavigateToDetect  = {
+                        navController.navigate(Screen.Detect.route) {
+                            popUpTo(navController.graph.findStartDestination().id) {
+                                saveState = true
+                            }
+                            launchSingleTop = true
+                            restoreState    = true
+                        }
+                    },
+                    onNavigateToHistory = {
+                        navController.navigate(Screen.History.route) {
+                            popUpTo(navController.graph.findStartDestination().id) {
+                                saveState = true
+                            }
+                            launchSingleTop = true
+                            restoreState    = true
+                        }
+                    }
+                )
+            }
+
+            composable(Screen.Detect.route) {
+                DetectScreen()
+            }
+
             composable(Screen.History.route) {
                 HistoryScreen(
                     onDetectionClick = { eventId ->
@@ -111,6 +141,7 @@ fun AppNavGraph() {
                     }
                 )
             }
+
             composable(Screen.Profile.route) {
                 ProfileScreen(
                     onLogout = {
@@ -120,6 +151,8 @@ fun AppNavGraph() {
                     }
                 )
             }
+
+            // ── Detail screen ─────────────────────────────────────────────────
             composable(Screen.DetectionDetail.route) { backStackEntry ->
                 val eventId = backStackEntry.arguments?.getString("eventId") ?: ""
                 DetectionDetailScreen(
