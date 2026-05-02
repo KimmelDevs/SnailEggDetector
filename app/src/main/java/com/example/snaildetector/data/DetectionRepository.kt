@@ -4,7 +4,8 @@ import android.graphics.Bitmap
 import android.util.Log
 import com.example.snaildetector.supabase
 import io.github.jan.supabase.gotrue.auth
-import io.github.jan.supabase.postgrest.postgrest
+import io.github.jan.supabase.postgrest.from
+import io.github.jan.supabase.postgrest.query.Order
 import io.github.jan.supabase.storage.storage
 import java.io.ByteArrayOutputStream
 import java.text.SimpleDateFormat
@@ -88,10 +89,10 @@ class DetectionRepository {
                 photoUrl          = signedUrl,
             )
 
-            supabase.postgrest["snaildetections"].insert(detection)
+            supabase.from("snaildetections").insert(detection)
 
             // Re-fetch to get server-assigned id / timestamps
-            val saved = supabase.postgrest["snaildetections"]
+            val saved = supabase.from("snaildetections")
                 .select { filter { eq("event_id", eventId) } }
                 .decodeSingle<SnailDetection>()
 
@@ -108,24 +109,22 @@ class DetectionRepository {
      * Fetch all detections for the current user, newest first.
      */
     suspend fun getAll(): List<SnailDetection> {
-        return try {
-            supabase.postgrest["snaildetections"]
-                .select {
-                    order("captured_at", io.github.jan.supabase.postgrest.query.Order.DESCENDING)
-                }
-                .decodeList<SnailDetection>()
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to fetch detections", e)
-            throw e
-        }
+        val uid = supabase.auth.currentUserOrNull()?.id
+            ?: throw IllegalStateException("User not logged in")
+        return supabase.from("snaildetections")
+            .select {
+                filter { eq("user_id", uid) }
+                order("captured_at", Order.DESCENDING)
+            }
+            .decodeList<SnailDetection>()
     }
 
     /**
      * Delete a detection row (storage file is kept — add cleanup if needed).
      */
-    suspend fun delete(id: String): Boolean {
-        return try {
-            supabase.postgrest["snaildetections"]
+    suspend fun delete(id: String) {
+        try {
+            supabase.from("snaildetections")
                 .delete { filter { eq("id", id) } }
             true
         } catch (e: Exception) {
