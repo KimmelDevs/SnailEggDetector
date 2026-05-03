@@ -88,4 +88,6 @@ dependencies {
 
     // ── Lifecycle (LocalLifecycleOwner) ───────────────────────────────────────
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.0")
+
+    implementation("io.github.jan-tennert.supabase:realtime-kt:VERSION")
 }

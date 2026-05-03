@@ -27,6 +27,13 @@ import coil.compose.AsyncImage
 import coil.compose.AsyncImagePainter
 import com.example.snaildetector.data.DetectionRepository
 import com.example.snaildetector.data.SnailDetection
+import com.example.snaildetector.supabase
+import io.github.jan.supabase.gotrue.auth
+import io.github.jan.supabase.realtime.PostgresAction
+import io.github.jan.supabase.realtime.channel
+import io.github.jan.supabase.realtime.postgresChangeFlow
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
@@ -43,25 +50,50 @@ fun HistoryScreen(
     var isLoading    by remember { mutableStateOf(true) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
-    LaunchedEffect(Unit) {
-        println("DEBUG: Fetching started")
-        isLoading = true
+    val uid = supabase.auth.currentUserOrNull()?.id
 
-        Log.d("HistoryScreen", "Loading detections")
+    // Initial load
+    LaunchedEffect(Unit) {
+        isLoading = true
         try {
             detections = repo.getAll()
-
-            if (detections.isNotEmpty()) {
-                Log.d("HistoryScreen", "Loaded ${detections} detections")
-            } else {
-                Log.d("HistoryScreen", "No detections found")
-            }
         } catch (e: Exception) {
             errorMessage = e.message ?: "Unknown error"
-            android.util.Log.e("HistoryScreen", "Failed to load detections", e)
+            Log.e("HistoryScreen", "Failed to load detections", e)
         } finally {
             isLoading = false
         }
+    }
+
+    // Realtime listener — auto-updates when detections are inserted or deleted
+    LaunchedEffect(uid) {
+        if (uid == null) return@LaunchedEffect
+        val channel = supabase.channel("history-$uid")
+
+        // New detection inserted → prepend to list
+        channel.postgresChangeFlow<PostgresAction.Insert>(schema = "public") {
+            table  = "snaildetections"
+            filter = "user_id=eq.$uid"
+        }.onEach { action ->
+            try {
+                val fresh = repo.getAll()
+                detections = fresh
+            } catch (e: Exception) {
+                Log.w("HistoryScreen", "Realtime refresh failed: ${e.message}")
+            }
+        }.launchIn(this)
+
+        // Detection deleted → remove from list
+        channel.postgresChangeFlow<PostgresAction.Delete>(schema = "public") {
+            table = "snaildetections"
+        }.onEach { action ->
+            val deletedId = action.oldRecord["id"]?.toString()?.trim('"')
+            if (deletedId != null) {
+                detections = detections.filter { it.id != deletedId }
+            }
+        }.launchIn(this)
+
+        channel.subscribe()
     }
 
 
