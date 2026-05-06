@@ -105,13 +105,40 @@ class DetectionTracker(
 
     private fun bestMatch(bbox: RectF): Int {
         var bestIdx   = -1
-        var bestScore = iouMatchThresh
+        var bestScore = -1f
+
+        val bw = bbox.width()
+        val bh = bbox.height()
+        // Allow matching if center moves up to 1.5x the box diagonal between frames
+        val maxDist = 1.5f * Math.sqrt((bw * bw + bh * bh).toDouble()).toFloat()
+
         for ((i, t) in tracked.withIndex()) {
             if (t.missStreak > maxMissFrames) continue
-            val score = iou(bbox, RectF(t.left, t.top, t.right, t.bottom))
-            if (score > bestScore) { bestScore = score; bestIdx = i }
+
+            val tRect = RectF(t.left, t.top, t.right, t.bottom)
+
+            // Primary: IoU overlap
+            val iouScore = iou(bbox, tRect)
+            if (iouScore >= iouMatchThresh) {
+                if (iouScore > bestScore) { bestScore = iouScore; bestIdx = i }
+                continue
+            }
+
+            // Fallback: center-distance (catches camera-pan where boxes don't overlap)
+            val dist = centerDist(bbox, tRect)
+            if (dist < maxDist) {
+                // Normalise to 0..1 so it competes fairly with iou scores
+                val distScore = 1f - (dist / maxDist)
+                if (distScore > bestScore) { bestScore = distScore; bestIdx = i }
+            }
         }
         return bestIdx
+    }
+
+    private fun centerDist(a: RectF, b: RectF): Float {
+        val dx = (a.left + a.right) / 2f - (b.left + b.right) / 2f
+        val dy = (a.top + a.bottom) / 2f - (b.top + b.bottom) / 2f
+        return Math.sqrt((dx * dx + dy * dy).toDouble()).toFloat()
     }
 
     private fun ema(old: Float, new: Float, alpha: Float) = alpha * new + (1f - alpha) * old

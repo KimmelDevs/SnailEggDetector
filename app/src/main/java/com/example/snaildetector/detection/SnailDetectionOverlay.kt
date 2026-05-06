@@ -47,8 +47,8 @@ class SnailDetectionOverlay(
 
     private val tracker = DetectionTracker(
         confirmFrames  = 1,
-        maxMissFrames  = 5,
-        smoothAlpha    = 0.4f,
+        maxMissFrames  = 2,
+        smoothAlpha    = 0.6f,
         iouMatchThresh = 0.3f
     )
 
