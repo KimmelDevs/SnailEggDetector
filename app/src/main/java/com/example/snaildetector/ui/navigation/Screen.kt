@@ -1,6 +1,9 @@
 package com.example.snaildetector.ui.navigation
 
 sealed class Screen(val route: String) {
+    // Splash
+    object Splash : Screen("splash")
+
     // Auth flow
     object Login  : Screen("login")
     object SignUp : Screen("signup")

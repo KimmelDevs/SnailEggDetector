@@ -20,33 +20,13 @@ import com.example.snaildetector.ui.screens.HomeScreen
 import com.example.snaildetector.ui.screens.LoginScreen
 import com.example.snaildetector.ui.screens.SignUpScreen
 import com.example.snaildetector.ui.screens.ProfileScreen
-import io.github.jan.supabase.gotrue.auth
-import io.github.jan.supabase.gotrue.SessionStatus
+import com.example.snaildetector.ui.screens.SplashScreen
 
 @Composable
 fun AppNavGraph() {
     val navController      = rememberNavController()
     val navBackStack       by navController.currentBackStackEntryAsState()
     val currentDestination = navBackStack?.destination
-
-    // ── Auth state listener ───────────────────────────────────────────────────
-    LaunchedEffect(Unit) {
-        supabase.auth.sessionStatus.collect { status ->
-            when (status) {
-                is SessionStatus.Authenticated -> {
-                    navController.navigate(Screen.Home.route) {
-                        popUpTo(Screen.Login.route) { inclusive = true }
-                    }
-                }
-                is SessionStatus.NotAuthenticated -> {
-                    navController.navigate(Screen.Login.route) {
-                        popUpTo(Screen.Home.route) { inclusive = true }
-                    }
-                }
-                else -> Unit
-            }
-        }
-    }
 
     val mainRoutes    = bottomNavItems.map { it.screen.route }
     val showBottomBar = currentDestination?.route in mainRoutes
@@ -79,9 +59,25 @@ fun AppNavGraph() {
     ) { innerPadding ->
         NavHost(
             navController    = navController,
-            startDestination = Screen.Login.route,
+            startDestination = Screen.Splash.route,
             modifier         = Modifier.padding(innerPadding)
         ) {
+
+            // ── Splash ────────────────────────────────────────────────────────
+            composable(Screen.Splash.route) {
+                SplashScreen(
+                    onAuthenticated    = {
+                        navController.navigate(Screen.Home.route) {
+                            popUpTo(Screen.Splash.route) { inclusive = true }
+                        }
+                    },
+                    onNotAuthenticated = {
+                        navController.navigate(Screen.Login.route) {
+                            popUpTo(Screen.Splash.route) { inclusive = true }
+                        }
+                    }
+                )
+            }
 
             // ── Auth screens ──────────────────────────────────────────────────
             composable(Screen.Login.route) {

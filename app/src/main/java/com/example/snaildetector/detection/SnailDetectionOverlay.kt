@@ -7,11 +7,8 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Matrix
 import android.graphics.Paint
-import android.graphics.PixelFormat
 import android.graphics.RectF
 import android.util.Log
-import android.view.SurfaceHolder
-import android.view.SurfaceView
 import android.widget.FrameLayout
 import androidx.camera.core.AspectRatio
 import androidx.camera.core.CameraSelector
@@ -181,7 +178,7 @@ class SnailDetectionOverlay(
 
     // ── Bounding-box overlay ──────────────────────────────────────────────────
 
-    inner class BoundingBoxView(context: Context) : SurfaceView(context), SurfaceHolder.Callback {
+    inner class BoundingBoxView(context: Context) : android.view.View(context) {
 
         private val fillPaint = Paint().apply {
             color = Color.argb(60, 231, 76, 60)
@@ -209,17 +206,12 @@ class SnailDetectionOverlay(
         }
 
         init {
-            holder.addCallback(this)
-            setZOrderOnTop(true)
-            holder.setFormat(PixelFormat.TRANSPARENT)
             setWillNotDraw(false)
+            setBackgroundColor(Color.TRANSPARENT)
         }
 
-        override fun surfaceCreated(h: SurfaceHolder)                              {}
-        override fun surfaceChanged(h: SurfaceHolder, f: Int, w: Int, height: Int) {}
-        override fun surfaceDestroyed(h: SurfaceHolder)                            {}
-
         override fun onDraw(canvas: Canvas) {
+            canvas.drawColor(Color.TRANSPARENT, android.graphics.PorterDuff.Mode.CLEAR)
             currentDetections.forEach { det ->
                 val box = det.bbox
 
